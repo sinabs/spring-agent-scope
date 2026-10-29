@@ -1,0 +1,54 @@
+# 构建并运行全部测试；推送到 main 时额外提交依赖图，让 GitHub 能对依赖发出安全告警。
+# 第三方 action 固定到提交 SHA，行尾注释是对应的版本号。
+name: Java CI with Gradle
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# 同一个 PR 有新的推送时取消旧的运行，main 上的运行不取消
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      # 按 Gradle 在 CI 中的推荐方式配置，并缓存已下载的依赖
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Build with Gradle Wrapper
+        run: ./gradlew build
+
+  dependency-submission:
+    # PR 来自 fork 时没有写权限，所以只在推送到 main 时运行
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      # 生成并提交依赖图，启用 Dependabot 对所有依赖的安全告警
+      - name: Generate and submit dependency graph
+        uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
