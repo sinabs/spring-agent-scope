@@ -1,6 +1,7 @@
 <p align="center"><img src="docs/brand/logo.svg" width="160" alt="Yoke Logo"></p>
 
 <p align="center">
+<a href="https://github.com/sinabs/spring-agent-scope/actions/workflows/gradle.yml"><img src="https://github.com/sinabs/spring-agent-scope/actions/workflows/gradle.yml/badge.svg" alt="Build Status"></a>
 <img src="https://img.shields.io/badge/Java-25-orange" alt="Java 25">
 <img src="https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F" alt="Spring Boot 4.1">
 <img src="https://img.shields.io/badge/AgentScope%20Java-2.0-5B6BFF" alt="AgentScope Java 2.0">
@@ -92,3 +93,7 @@ Issues and pull requests are welcome. Before submitting, run `./gradlew build` a
 ## License
 
 Yoke is open-sourced software licensed under the [Apache License 2.0](LICENSE).
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=sinabs/spring-agent-scope&type=Date)](https://star-history.com/#sinabs/spring-agent-scope&Date)
