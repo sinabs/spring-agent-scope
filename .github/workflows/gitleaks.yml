@@ -1,0 +1,28 @@
+# 每次推送和 PR 都用 gitleaks 扫描整个提交历史，发现疑似密钥就让检查失败。
+# 与本地的 pre-commit 钩子配合：钩子给提交者即时反馈，这里对所有协作者强制生效。
+name: Secret scan
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      # 需要完整历史，否则只能扫描最近一个提交
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      # 个人账号免费使用；仓库迁到组织账号后，需要在仓库 secrets 里配置 GITLEAKS_LICENSE
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
