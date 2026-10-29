@@ -1,75 +1,96 @@
-<p align="center"><img src="docs/brand/logo-horizontal.svg" alt="Yoke" height="96"></p>
+<p align="center"><img src="docs/brand/logo.svg" width="160" alt="Yoke Logo"></p>
 
-**Yoke** · AgentHarness：基于 Spring Boot 和 [AgentScope Java](https://github.com/agentscope-ai/agentscope-java)（V2）的单体 Agent 服务。
+<p align="center">
+<img src="https://img.shields.io/badge/Java-25-orange" alt="Java 25">
+<img src="https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F" alt="Spring Boot 4.1">
+<img src="https://img.shields.io/badge/AgentScope%20Java-2.0-5B6BFF" alt="AgentScope Java 2.0">
+<img src="https://img.shields.io/badge/Gradle-9.8-02303A" alt="Gradle 9.8">
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License"></a>
+</p>
+
+<p align="center">English | <a href="README_CN.md">简体中文</a></p>
+
+## About Yoke
+
+**Yoke** · AgentHarness: a monolithic agent service built on Spring Boot and [AgentScope Java](https://github.com/agentscope-ai/agentscope-java) (V2).
 
 > A Spring-based agent harness.
 
-Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke 则是套在模型外面、让它能稳定干活的那层运行框架。
+A yoke is the wooden frame that makes oxen and horses pull in the direction you want. Yoke does the same for models: it is the runtime layer wrapped around a model so it can do real work reliably. It turns AgentScope's agent capabilities into a ready-to-use HTTP service, so you can focus on your business logic instead of glue code:
 
-## 技术栈
+- One endpoint for multi-turn conversations: `POST /api/chat`.
+- A temporary agent is built for every request and closed afterwards; conversation history lives in a shared state store and is isolated per session.
+- Models are plugged in through the official AgentScope starters: OpenAI-compatible APIs (works with DashScope, DeepSeek and others), Anthropic, Gemini and Ollama. Switching is a dependency and configuration change.
+- `local` / `test` / `prod` profiles. In production, a missing API key fails the startup instead of shipping with an empty key.
+- Virtual threads are enabled by default, for both Tomcat and Spring's default thread pool.
+- Request validation: a missing `message` returns 400.
 
-- JDK 25
-- Spring Boot 4.1
-- AgentScope Java 2.0
-- Gradle 9.8（Groovy DSL，版本集中在 `gradle/libs.versions.toml`）
-- Lombok、Jakarta Validation
-- 虚拟线程：Tomcat 请求线程和 Spring 默认线程池都使用虚拟线程
+## Getting Started
 
-## 快速开始
+Requires JDK 25.
 
 ```bash
-sdk env                         # 切换到 JDK 25（使用 sdkman 时）
+sdk env                         # switch to JDK 25 (if you use sdkman)
 export OPENAI_API_KEY=sk-...
-./gradlew bootRun               # 默认激活 local 环境
+./gradlew bootRun               # the local profile is active by default
 ```
 
 ```bash
 curl -X POST localhost:8080/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message": "你好"}'
+  -d '{"message": "Hello"}'
 # {"sessionId":"…","reply":"…"}
 ```
 
-后续请求带上返回的 `sessionId`，即可延续同一段对话；不同 `sessionId` 的对话历史互相隔离。
+Send the returned `sessionId` with later requests to continue the same conversation; conversations with different `sessionId`s are isolated from each other. Run the tests with `./gradlew build`.
 
-每次请求都会新建一个临时 Agent、用完关闭，对话历史保存在共享的状态存储里。默认的内存存储只适合单进程，重启后历史丢失；多副本部署时需要换成 Redis 或 JDBC 实现。同一会话的并发请求不会被串行化，请避免同时发送。
+> **Note**
+> The default in-memory state store only suits a single process, and history is lost when the service restarts. For multi-instance deployments, switch to a Redis or JDBC implementation. Concurrent requests for the same session are not serialized, so avoid sending them at the same time.
 
-## 配置
+## Configuration
 
-配置按环境拆分，没有显式指定环境时默认激活 `local`；部署时用环境变量 `SPRING_PROFILES_ACTIVE=prod` 切换。
+Configuration is split by profile. The `local` profile is active when none is specified; switch with the `SPRING_PROFILES_ACTIVE=prod` environment variable or the `--spring.profiles.active=prod` command-line argument.
 
-| 文件 | 用途 |
+| File | Purpose |
 |---|---|
-| `application.yml` | 各环境通用：模型、Agent、虚拟线程、日志格式 |
-| `application-local.yml` | 本地开发：密钥读环境变量（可为空），`com.yoke` 日志为 debug |
-| `application-test.yml` | 自动化测试：假密钥，不会真正调用模型 |
-| `application-prod.yml` | 生产：密钥必须由环境变量提供，缺失则启动失败；优雅停机 |
+| `application.yml` | Shared by all profiles: model, agent, virtual threads, log format |
+| `application-local.yml` | Local development: API key from the environment (may be empty), `com.yoke` logs at debug |
+| `application-test.yml` | Automated tests: a fake API key, the model is never really called |
+| `application-prod.yml` | Production: the API key must come from the environment, startup fails without it; graceful shutdown |
 
-模型由 AgentScope 官方 starter 根据 `agentscope.*` 创建，Agent 由共享 Builder 每次请求新建（官方的单例 Agent 已关闭）：
+The model is created by the official AgentScope starter from `agentscope.*`, and the agent is built per request by a shared builder (the official singleton agent is turned off):
 
-| 配置 | 说明 |
+| Property | Description |
 |---|---|
-| `agentscope.openai.api-key` | 模型密钥，来自环境变量 `OPENAI_API_KEY` |
-| `agentscope.openai.model-name` | 模型名称 |
-| `agentscope.openai.base-url` | 接入其他 OpenAI 兼容服务（DashScope、DeepSeek 等）时设置 |
-| `agentscope.agent.sys-prompt` | 系统提示词 |
-| `agentscope.agent.max-iters` | ReAct 最大迭代次数 |
+| `agentscope.openai.api-key` | Model API key, taken from the `OPENAI_API_KEY` environment variable |
+| `agentscope.openai.model-name` | Model name |
+| `agentscope.openai.base-url` | Set this to use another OpenAI-compatible service (DashScope, DeepSeek, ...) |
+| `agentscope.agent.sys-prompt` | System prompt |
+| `agentscope.agent.max-iters` | Maximum number of ReAct iterations |
 
-要换成其他模型，把 `build.gradle` 里的 `agentscope-openai-spring-boot-starter` 换成对应的 starter（dashscope、anthropic、gemini、ollama），并修改 `agentscope.model.provider`。
+To use another model, replace `agentscope-openai-spring-boot-starter` in `build.gradle` with the matching starter (dashscope, anthropic, gemini or ollama) and change `agentscope.model.provider`.
 
-## 接口
-
-`POST /api/chat`，请求体 `message` 必填（缺失返回 400），`sessionId` 可选。
-
-## 目录
+## Project Structure
 
 ```
 src/main/java/com/yoke/
-├── YokeApplication.java        应用入口
-├── api/                        HTTP 接口契约（ChatApi，路径、校验和文档都在这里）
-├── config/                     Agent 共享配置（Builder、状态存储）
-├── controller/                 接口实现（ChatController）
-└── model/                      请求与响应对象（ChatRequest、ChatResponse）
-src/main/resources/             application.yml 及各环境配置
-docs/brand/                     logo
+├── YokeApplication.java        Application entry point
+├── api/                        HTTP contract (ChatApi: paths, validation and docs live here)
+├── config/                     Shared agent configuration (builder, state store)
+├── controller/                 Contract implementation (ChatController)
+└── model/                      Request and response objects (ChatRequest, ChatResponse)
+src/main/resources/             application.yml and the per-profile configuration
+docs/brand/                     Logo
 ```
+
+## Learn More
+
+- [AgentScope Java documentation](https://java.agentscope.io): the full guide to agents, tools, permissions, state stores and more.
+
+## Contributing
+
+Issues and pull requests are welcome. Before submitting, run `./gradlew build` and make sure all tests pass. Code comments are written in Chinese.
+
+## License
+
+Yoke is open-sourced software licensed under the [Apache License 2.0](LICENSE).
