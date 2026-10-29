@@ -1,0 +1,47 @@
+plugins {
+    id 'java'
+    alias(libs.plugins.spring.boot)
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // 版本统一交给 BOM 管理，下面的依赖都不需要写版本号
+    implementation platform(libs.spring.boot.dependencies)
+    implementation platform(libs.agentscope.bom)
+
+    implementation libs.spring.boot.starter.webmvc
+    implementation libs.spring.boot.starter.validation
+    // 官方核心 starter：根据 agentscope.* 配置自动创建 ReActAgent
+    implementation libs.agentscope.starter
+    // 模型 starter：这里选 OpenAI 兼容协议，改 base-url 即可接入 DashScope、DeepSeek 等；换模型只需替换这一行
+    implementation libs.agentscope.openai.starter
+
+    // Lombok 只在编译期使用；这几个配置不继承 implementation，需要单独引入 BOM 才能省略版本号
+    ['compileOnly', 'annotationProcessor', 'testCompileOnly', 'testAnnotationProcessor'].each { configuration ->
+        add(configuration, platform(libs.spring.boot.dependencies))
+        add(configuration, libs.lombok)
+    }
+
+    testImplementation libs.spring.boot.starter.test
+    testImplementation libs.spring.boot.starter.webmvc.test
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+    options.compilerArgs.add('-parameters')
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}

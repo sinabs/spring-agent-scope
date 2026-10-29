@@ -1,0 +1,11 @@
+server:
+  shutdown: graceful
+
+agentscope:
+  openai:
+    # 生产环境必须通过环境变量提供密钥，没有设置时启动即失败，避免带着空密钥上线
+    api-key: ${OPENAI_API_KEY}
+
+logging:
+  level:
+    com.yoke: info

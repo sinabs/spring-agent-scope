@@ -1,0 +1,17 @@
+[versions]
+spring-boot = "4.1.2"
+agentscope = "2.0.4"
+
+[libraries]
+spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
+agentscope-bom = { module = "io.agentscope:agentscope-bom", version.ref = "agentscope" }
+agentscope-starter = { module = "io.agentscope:agentscope-spring-boot-starter" }
+agentscope-openai-starter = { module = "io.agentscope:agentscope-openai-spring-boot-starter" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+lombok = { module = "org.projectlombok:lombok" }
+spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }

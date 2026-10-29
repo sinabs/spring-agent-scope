@@ -1,0 +1,8 @@
+.gradle/
+build/
+.idea/
+*.iml
+.DS_Store
+
+# Claude Code 本地说明，不提交
+CLAUDE.md

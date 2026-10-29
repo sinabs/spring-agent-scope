@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 256" role="img" aria-label="Yoke">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E1634"/><stop offset="1" stop-color="#050913"/></linearGradient>
+  <radialGradient id="aura" cx=".5" cy=".46" r=".55"><stop offset="0" stop-color="#5B5BFF" stop-opacity=".45"/><stop offset=".6" stop-color="#2A3FD0" stop-opacity=".12"/><stop offset="1" stop-color="#2A3FD0" stop-opacity="0"/></radialGradient>
+  <linearGradient id="neon" gradientUnits="userSpaceOnUse" x1="82" y1="60" x2="150" y2="200"><stop offset="0" stop-color="#22E1FF"/><stop offset=".55" stop-color="#6D7BFF"/><stop offset="1" stop-color="#B26BFF"/></linearGradient>
+  <linearGradient id="core" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".5" stop-color="#9FF3FF"/><stop offset="1" stop-color="#6D7BFF"/></linearGradient>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#8FB4FF" fill-opacity=".22"/></pattern>
+  <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256"><feGaussianBlur stdDeviation="6"/></filter>
+  <filter id="glow2" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256"><feGaussianBlur stdDeviation="3"/></filter>
+  <clipPath id="sq"><rect width="256" height="256" rx="58"/></clipPath>
+</defs>
+<rect width="256" height="256" rx="58" fill="url(#bg)"/>
+<g clip-path="url(#sq)">
+  <rect width="256" height="256" fill="url(#dots)"/>
+  <rect width="256" height="256" fill="url(#aura)"/>
+  <!-- 电路走线 -->
+  <g fill="none" stroke="#22E1FF" stroke-opacity=".28" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 74 H34 L50 58 H70"/><path d="M256 74 H222 L206 58 H186"/>
+    <path d="M0 196 H40 L56 212 H92"/><path d="M256 196 H216 L200 212 H164"/>
+    <path d="M18 128 H48"/><path d="M238 128 H208"/>
+  </g>
+  <g fill="#22E1FF" fill-opacity=".5"><circle cx="70" cy="58" r="2.4"/><circle cx="186" cy="58" r="2.4"/><circle cx="92" cy="212" r="2.4"/><circle cx="164" cy="212" r="2.4"/><circle cx="48" cy="128" r="2.4"/><circle cx="208" cy="128" r="2.4"/></g>
+  <rect width="256" height="130" fill="url(#gloss)"/>
+</g>
+<rect x="1" y="1" width="254" height="254" rx="57" fill="none" stroke="#7FA2FF" stroke-opacity=".35" stroke-width="2"/>
+<!-- 外圈：约束 Agent 的「缰绳」轨道 -->
+<circle cx="128" cy="128" r="92" fill="none" stroke="#6D7BFF" stroke-opacity=".35" stroke-width="1.4" stroke-dasharray="1 7" stroke-linecap="round"/>
+<!-- Y：节点网络 -->
+<path d="M82 62 L128 124 L174 62 M128 124 V196" fill="none" stroke="url(#neon)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".85" filter="url(#glow)"/>
+<path d="M82 62 L128 124 L174 62 M128 124 V196" fill="none" stroke="url(#neon)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M82 62 L128 124 L174 62 M128 124 V196" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<!-- 端点节点 -->
+<g stroke-width="4">
+  <circle cx="82" cy="62" r="11" fill="#050913" stroke="#22E1FF"/><circle cx="82" cy="62" r="4" fill="#BFF6FF"/>
+  <circle cx="174" cy="62" r="11" fill="#050913" stroke="#4FB6FF"/><circle cx="174" cy="62" r="4" fill="#BFE6FF"/>
+  <circle cx="128" cy="196" r="11" fill="#050913" stroke="#B26BFF"/><circle cx="128" cy="196" r="4" fill="#E3C8FF"/>
+</g>
+<!-- Agent 核心 -->
+<polygon points="128.0,90.0 157.4,107.0 157.4,141.0 128.0,158.0 98.6,141.0 98.6,107.0" fill="none" stroke="#22E1FF" stroke-opacity=".5" stroke-width="1.6" stroke-dasharray="3 4"/>
+<polygon points="128.0,100.0 148.8,112.0 148.8,136.0 128.0,148.0 107.2,136.0 107.2,112.0" fill="#6D7BFF" fill-opacity=".8" filter="url(#glow2)"/>
+<polygon points="128.0,102.0 147.1,113.0 147.1,135.0 128.0,146.0 108.9,135.0 108.9,113.0" fill="#07102A" stroke="url(#neon)" stroke-width="3.5" stroke-linejoin="round"/>
+<circle cx="128" cy="124" r="9" fill="url(#core)"/>
+<text x="288" y="124" font-family="-apple-system, 'SF Pro Display', Inter, Helvetica, Arial, sans-serif" font-size="84" font-weight="700" letter-spacing="-2" fill="#0B1330"><tspan fill="#5B6BFF">Y</tspan>oke</text>
+<text x="291" y="176" font-family="-apple-system, 'SF Pro Text', Inter, Helvetica, Arial, sans-serif" font-size="26" fill="#5B6B7C">AgentHarness · Spring Boot × AgentScope</text></svg>

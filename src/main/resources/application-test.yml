@@ -1,0 +1,4 @@
+# 测试环境：使用假密钥，保证应用能启动，但不会真正调用模型
+agentscope:
+  openai:
+    api-key: sk-test

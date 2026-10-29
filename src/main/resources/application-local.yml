@@ -1,0 +1,8 @@
+# 本地开发环境：没有设置环境变量时密钥为空，应用仍能启动，调用模型时才会报鉴权错误
+agentscope:
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+
+logging:
+  level:
+    com.yoke: debug

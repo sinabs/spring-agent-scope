@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: yoke
+  profiles:
+    # 没有显式指定环境时默认使用 local；部署时用环境变量 SPRING_PROFILES_ACTIVE=prod 覆盖
+    default: local
+  threads:
+    virtual:
+      # 一个开关同时让 Tomcat 请求线程和 Spring 默认线程池（applicationTaskExecutor）使用虚拟线程
+      enabled: true
+
+logging:
+  pattern:
+    console: "%red(%d{yyyy-MM-dd HH:mm:ss}) %green([%thread]) %highlight(%-5level) %green(%X{traceId:-},%X{spanId:-}) %boldMagenta(%logger{50}) - %cyan(%msg%n)"
+
+# Agent 与模型由 AgentScope 官方 starter 根据下面的配置自动创建
+# 这里只放各环境通用的配置，密钥和环境差异见 application-{profile}.yml
+agentscope:
+  model:
+    provider: openai
+  openai:
+    model-name: gpt-4.1-mini
+    # 使用其他 OpenAI 兼容服务时设置 base-url，例如 DashScope：
+    # base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  agent:
+    # 关闭官方的单例 Agent：Agent 由 AgentConfiguration 的共享 Builder 在每次请求时创建
+    # name、sys-prompt、max-iters 仍然生效，被 Builder 读取
+    enabled: false
+    name: Yoke
+    sys-prompt: 你是一个乐于助人的 AI 助手，请用简洁清晰的中文回答。
+    max-iters: 10
