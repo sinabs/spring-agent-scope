@@ -51,12 +51,10 @@ Send the returned `sessionId` with later requests to continue the same conversat
 
 Configuration is split by profile. The `local` profile is active when none is specified; switch with the `SPRING_PROFILES_ACTIVE=prod` environment variable or the `--spring.profiles.active=prod` command-line argument.
 
-| File | Purpose |
-|---|---|
-| `application.yml` | Shared by all profiles: model, agent, virtual threads, log format |
-| `application-local.yml` | Local development: API key from the environment (may be empty), `com.yoke` logs at debug |
-| `application-test.yml` | Automated tests: a fake API key, the model is never really called |
-| `application-prod.yml` | Production: the API key must come from the environment, startup fails without it; graceful shutdown |
+- `application.yml`: Shared by all profiles: model, agent, virtual threads, log format
+- `application-local.yml`: Local development: API key from the environment (may be empty), `com.yoke` logs at debug
+- `application-test.yml`: Automated tests: a fake API key, the model is never really called
+- `application-prod.yml`: Production: the API key must come from the environment, startup fails without it; graceful shutdown
 
 The model is created by the official AgentScope starter from `agentscope.*`, and the agent is built per request by a shared builder (the official singleton agent is turned off):
 

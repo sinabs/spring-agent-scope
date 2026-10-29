@@ -51,12 +51,10 @@ curl -X POST localhost:8080/api/chat \
 
 配置按环境拆分，没有显式指定环境时默认激活 `local`；部署时用环境变量 `SPRING_PROFILES_ACTIVE=prod` 或命令行参数 `--spring.profiles.active=prod` 切换。
 
-| 文件 | 用途 |
-|---|---|
-| `application.yml` | 各环境通用：模型、Agent、虚拟线程、日志格式 |
-| `application-local.yml` | 本地开发：密钥读环境变量（可为空），`com.yoke` 日志为 debug |
-| `application-test.yml` | 自动化测试：假密钥，不会真正调用模型 |
-| `application-prod.yml` | 生产：密钥必须由环境变量提供，缺失则启动失败；优雅停机 |
+- `application.yml`：各环境通用：模型、Agent、虚拟线程、日志格式
+- `application-local.yml`：本地开发：密钥读环境变量（可为空），`com.yoke` 日志为 debug
+- `application-test.yml`：自动化测试：假密钥，不会真正调用模型
+- `application-prod.yml`：生产：密钥必须由环境变量提供，缺失则启动失败；优雅停机
 
 模型由 AgentScope 官方 starter 根据 `agentscope.*` 创建，Agent 由共享 Builder 每次请求新建（官方的单例 Agent 已关闭）：
 
