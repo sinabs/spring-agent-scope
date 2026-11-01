@@ -16,12 +16,39 @@ import org.springframework.web.bind.annotation.RequestMapping;
 /**
  * 与 Agent 对话的 HTTP 接口契约。
  *
- * <p>每次请求都会新建一个临时 Agent，用完即关闭；对话历史保存在共享的状态存储中，
- * 按会话 ID 隔离，所以新建的 Agent 仍能接上同一会话之前的对话。
+ * <p>每次请求都会新建一个临时 HarnessAgent，用完即关闭；对话历史保存在 Redis 里，
+ * 按 {@code (userId, sessionId)} 隔离，所以新建的 Agent 仍能接上同一会话之前的对话，服务重启后历史也还在。
  * 路径和参数注解都声明在这里，实现类只负责业务逻辑。
  *
- * <p>实现说明：暂时没有用户体系，所有会话共用同一个用户标识；默认的状态存储在内存中，服务重启后历史丢失；
+ * <p>会话规则：{@code userId} 和 {@code sessionId} 必须成对非空才对应一个会话槽位，服务端保证二者到达 Agent 时都有值：
+ * <ul>
+ *   <li>两个都传：用这一对；</li>
+ *   <li>只传 {@code sessionId}：归属 {@code default} 用户，与旧版客户端的行为一致；</li>
+ *   <li>只传 {@code userId}：为该用户新建一个会话，新的会话 ID 在响应里返回；</li>
+ *   <li>都不传：{@code default} 用户下新建会话。</li>
+ * </ul>
+ * 不能把「只给其一」当成无会话直接交给框架：2.0.4 里缺 {@code sessionId} 会落到以 Agent 名称命名的共享会话，
+ * 缺 {@code userId} 会落到匿名用户，所有调用方的历史都会混在一起。
+ *
+ * <p>标识格式：{@code userId} 和 {@code sessionId} 只能包含字母、数字、下划线、点和短横线，长度 1 到 64，
+ * 且不能全是点（排除 {@code .}、{@code ..}），不合法返回 400；缺失或空白不算不合法（分别用 {@code default} 和新建会话）。
+ * 这样限制是因为框架把槽位拼成 {@code userId/sessionId}，允许斜杠会让不同的一对撞到同一个槽位，
+ * 而 userId 还会成为工作区的目录名。
+ *
+ * <p>实现说明：暂时没有鉴权，{@code userId} 由调用方自报，不可信，不要把它当成身份校验；
  * 同一个会话的并发请求不会被串行化，由调用方保证同一会话同一时间只发一个请求。
+ *
+ * <p>工具权限：Agent 不开放文件读写、命令执行和联网工具，也整体关闭了子 Agent。
+ * 读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，
+ * 开着子 Agent 就能让模型通过 {@code agent_spawn} 派生出能联网的子 Agent，所以整体关闭。
+ * 关闭后模型仍能用的只有 {@code memory_save}、{@code memory_get}、{@code memory_search}、{@code session_history}、
+ * {@code session_list}、{@code session_search}、{@code load_skill_through_path} 和 {@code wait_async_results}：
+ * 联网路径已经没有；{@code memory_save} 是唯一写盘的，只往工作区里固定的 {@code MEMORY.md} 和
+ * {@code memory/<日期>.md} 追加，路径不由模型控制，但追加的内容没有大小限制。
+ *
+ * <p>已知限制：{@code HarnessAgent.close()} 会等待框架里全局的异步写入静默
+ * （{@code awaitMirrorQuiescence} 和 {@code awaitQuiescence}，各最长 5 秒），它在每个请求的清理回调里执行，
+ * 因此是跨请求耦合的：别的请求的在途写入会让这次关闭变慢。目前没有把关闭挪到专用线程，也没做并发压测。
  */
 @RequestMapping("/api/chat")
 public interface ChatApi {
@@ -29,12 +56,13 @@ public interface ChatApi {
     /**
      * 向 Agent 发送一条消息并返回回复。
      *
-     * <p>同一个 {@code sessionId} 共享对话历史；不传 {@code sessionId} 时由服务端新建会话，
-     * 并在响应里返回新的会话 ID，后续请求带上它即可延续对话。
+     * <p>同一个 {@code (userId, sessionId)} 共享对话历史；不传 {@code sessionId} 时由服务端新建会话，
+     * 并在响应里返回新的会话 ID，后续请求带上它即可延续对话；不传 {@code userId} 时使用 {@code default}。
+     * 完整规则见类说明。
      *
      * <p>{@code message} 为必填：缺失、为 null、空串或纯空白时都由参数校验拦截，返回 400。
      *
-     * @param request 对话请求，包含可选的会话 ID 和必填的用户输入
+     * @param request 对话请求，包含可选的用户标识、可选的会话 ID 和必填的用户输入
      * @return Agent 的回复，以及本次对话所属的会话 ID
      */
     @PostMapping
@@ -43,7 +71,7 @@ public interface ChatApi {
     /**
      * 向 Agent 发送一条消息，以 SSE（{@code text/event-stream}）边推理边推送事件。
      *
-     * <p>请求体和会话规则与 {@link #chat} 相同：同一个 {@code sessionId} 共享对话历史，
+     * <p>请求体和会话规则与 {@link #chat} 相同：同一个 {@code (userId, sessionId)} 共享对话历史，
      * 不传时由服务端新建会话，新的会话 ID 出现在最后的 {@code done} 事件里；{@code message} 缺失、
      * 为 null、空串或纯空白时在建立流之前就被参数校验拦截，返回 400。
      *
@@ -69,7 +97,7 @@ public interface ChatApi {
      * <p>已知限制：与 {@link #chat} 一样，同一个会话的并发请求不会被串行化，
      * 由调用方保证同一会话同一时间只发一个请求；取消时已经产生的部分对话是否写入历史，取决于框架的保存时机。
      *
-     * @param request 对话请求，包含可选的会话 ID 和必填的用户输入
+     * @param request 对话请求，包含可选的用户标识、可选的会话 ID 和必填的用户输入
      * @return 事件流，最后一个事件是 {@code done} 或 {@code error}
      */
     @PostMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

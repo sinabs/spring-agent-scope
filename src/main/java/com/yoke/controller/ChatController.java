@@ -6,11 +6,12 @@ import java.util.UUID;
 import com.yoke.api.ChatApi;
 import com.yoke.codec.EventCodec;
 import com.yoke.codec.MessageCodec;
+import com.yoke.config.HarnessAgentFactory;
 import com.yoke.model.ChatEvent;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.HarnessAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -27,31 +28,33 @@ public class ChatController implements ChatApi {
 
     private static final String DEFAULT_USER_ID = "default";
 
-    private final ReActAgent.Builder agentBuilder;
+    private final HarnessAgentFactory agentFactory;
 
     @Override
     public Mono<ChatResponse> chat(ChatRequest request) {
+        String userId = resolveUserId(request);
         String sessionId = resolveSessionId(request);
 
         return Mono.using(
-                agentBuilder::build,
-                agent -> agent.call(MessageCodec.toInput(request.message()), contextOf(sessionId))
+                agentFactory::create,
+                agent -> agent.call(MessageCodec.toInput(request.message()), contextOf(userId, sessionId))
                         .map(reply -> new ChatResponse(sessionId, MessageCodec.toText(reply))),
-                ReActAgent::close);
+                HarnessAgent::close);
     }
 
     @Override
     public Flux<ServerSentEvent<ChatEvent>> stream(ChatRequest request) {
+        String userId = resolveUserId(request);
         String sessionId = resolveSessionId(request);
 
         return Flux.using(
-                        agentBuilder::build,
+                        agentFactory::create,
                         agent -> {
                             EventCodec codec = new EventCodec(sessionId);
-                            return agent.streamEvents(MessageCodec.toInput(request.message()), contextOf(sessionId))
+                            return agent.streamEvents(MessageCodec.toInput(request.message()), contextOf(userId, sessionId))
                                     .concatMapIterable(codec::decode);
                         },
-                        ReActAgent::close)
+                        HarnessAgent::close)
                 .onErrorResume(error -> {
                     log.warn("流式对话出错，sessionId={}", sessionId, error);
                     return Flux.just(new ChatEvent.Error(describe(error)));
@@ -65,9 +68,15 @@ public class ChatController implements ChatApi {
                 .orElseGet(() -> UUID.randomUUID().toString());
     }
 
-    private static RuntimeContext contextOf(String sessionId) {
+    private static String resolveUserId(ChatRequest request) {
+        return Optional.ofNullable(request.userId())
+                .filter(StringUtils::hasText)
+                .orElse(DEFAULT_USER_ID);
+    }
+
+    private static RuntimeContext contextOf(String userId, String sessionId) {
         return RuntimeContext.builder()
-                .userId(DEFAULT_USER_ID)
+                .userId(userId)
                 .sessionId(sessionId)
                 .build();
     }

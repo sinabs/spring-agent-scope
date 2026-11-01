@@ -6,7 +6,7 @@ import java.util.List;
 import com.yoke.model.ChatEvent;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
-import io.agentscope.core.ReActAgent;
+import com.yoke.config.HarnessAgentFactory;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -15,6 +15,7 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
@@ -35,12 +36,12 @@ import static org.mockito.Mockito.when;
 
 class ChatControllerTests {
 
-    private final ReActAgent agent = mock(ReActAgent.class);
-    private final ReActAgent.Builder agentBuilder = mock(ReActAgent.Builder.class);
-    private final ChatController controller = new ChatController(agentBuilder);
+    private final HarnessAgent agent = mock(HarnessAgent.class);
+    private final HarnessAgentFactory agentFactory = mock(HarnessAgentFactory.class);
+    private final ChatController controller = new ChatController(agentFactory);
 
     ChatControllerTests() {
-        when(agentBuilder.build()).thenReturn(agent);
+        when(agentFactory.create()).thenReturn(agent);
     }
 
     private static Msg reply(String text) {
@@ -80,6 +81,52 @@ class ChatControllerTests {
         ChatResponse response = controller.chat(new ChatRequest("  ", "hi")).block();
 
         assertThat(response.sessionId()).isNotBlank().isNotEqualTo("  ");
+    }
+
+    @Test
+    void 不传用户时落在default用户下() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+
+        controller.chat(new ChatRequest("s-1", "hi")).block();
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("default");
+    }
+
+    @Test
+    void 带用户ID时使用该用户() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+
+        controller.chat(new ChatRequest("s-1", "hi", "alice")).block();
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("alice");
+        assertThat(context.getValue().getSessionId()).isEqualTo("s-1");
+    }
+
+    @Test
+    void 只给用户ID时为该用户新建会话而不是无会话() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+
+        ChatResponse response = controller.chat(new ChatRequest(null, "hi", "alice")).block();
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("alice");
+        assertThat(context.getValue().getSessionId()).isNotBlank().isEqualTo(response.sessionId());
+    }
+
+    @Test
+    void 用户ID为空白时回落到default用户() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+
+        controller.chat(new ChatRequest("s-1", "hi", "  ")).block();
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("default");
     }
 
     @Test

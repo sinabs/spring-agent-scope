@@ -19,10 +19,12 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 @AnalyzeClasses(packages = "com.yoke", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTests {
 
-    /** 控制器为了拿到装配好的 Agent，只允许依赖这几个框架类型，其余（Msg、各种事件）一律不行。 */
+    /**
+     * 控制器为了使用每请求新建的 Agent，只允许依赖这几个框架类型，其余（Msg、各种事件）一律不行。
+     * HarnessAgent 取代了第 01 轮的 ReActAgent（Builder 已由 HarnessAgentFactory 封装，不再出现在控制器里）。
+     */
     private static final Set<String> CONTROLLER_ALLOWED = Set.of(
-            "io.agentscope.core.ReActAgent",
-            "io.agentscope.core.ReActAgent$Builder",
+            "io.agentscope.harness.agent.HarnessAgent",
             "io.agentscope.core.agent.RuntimeContext",
             "io.agentscope.core.agent.RuntimeContext$Builder");
 
@@ -48,8 +50,12 @@ class ArchitectureTests {
     static final ArchRule 控制器只能依赖Agent装配相关的框架类型 = noClasses().that().resideInAPackage("com.yoke.controller..")
             .should().dependOnClassesThat(FRAMEWORK_OUTSIDE_ALLOWED_LIST);
 
+    /**
+     * 消息和事件类型只允许出现在 codec，以及实现框架中间件 SPI 的 middleware：
+     * MiddlewareBase 的钩子签名本身就是 Flux&lt;AgentEvent&gt;，实现它不可避免会碰到这些类型。
+     */
     @ArchTest
-    static final ArchRule 框架的消息和事件类型只能出现在codec里 = noClasses()
-            .that().resideOutsideOfPackage("com.yoke.codec..")
+    static final ArchRule 框架的消息和事件类型只能出现在codec和middleware里 = noClasses()
+            .that().resideOutsideOfPackages("com.yoke.codec..", "com.yoke.middleware..")
             .should().dependOnClassesThat().resideInAnyPackage("io.agentscope.core.message..", "io.agentscope.core.event..");
 }

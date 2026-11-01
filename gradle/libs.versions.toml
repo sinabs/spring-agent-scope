@@ -7,7 +7,11 @@ archunit = "1.4.1"
 spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
 agentscope-bom = { module = "io.agentscope:agentscope-bom", version.ref = "agentscope" }
 agentscope-starter = { module = "io.agentscope:agentscope-spring-boot-starter" }
+agentscope-harness = { module = "io.agentscope:agentscope-harness" }
+agentscope-redis = { module = "io.agentscope:agentscope-extensions-redis" }
 agentscope-openai-starter = { module = "io.agentscope:agentscope-openai-spring-boot-starter" }
+testcontainers = { module = "org.testcontainers:testcontainers" }
+testcontainers-junit = { module = "org.testcontainers:testcontainers-junit-jupiter" }
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 lombok = { module = "org.projectlombok:lombok" }
 archunit = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }

@@ -2,3 +2,7 @@
 agentscope:
   openai:
     api-key: sk-test
+
+yoke:
+  # 测试用独立的工作区；Redis 连接串由测试基类注入（Testcontainers 拉起的容器），这里故意不写
+  workspace: ${java.io.tmpdir}/yoke-test-workspace

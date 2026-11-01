@@ -20,7 +20,8 @@
 A yoke is the wooden frame that makes oxen and horses pull in the direction you want. Yoke does the same for models: it is the runtime layer wrapped around a model so it can do real work reliably. It turns AgentScope's agent capabilities into a ready-to-use HTTP service, so you can focus on your business logic instead of glue code:
 
 - One endpoint for multi-turn conversations: `POST /api/chat`, plus `POST /api/chat/stream` that streams the reasoning process over SSE.
-- A temporary agent is built for every request and closed afterwards; conversation history lives in a shared state store and is isolated per session.
+- A temporary `HarnessAgent` is built for every request and closed afterwards; conversation history lives in Redis, so it survives restarts and is shared by all replicas. History is isolated per `(userId, sessionId)`, and long conversations are compacted automatically.
+- The agent has no file, shell or web tools and sub-agents are switched off, and a logging middleware records a timing trace for every call.
 - Models are plugged in through the official AgentScope starters: OpenAI-compatible APIs (works with DashScope, DeepSeek and others), Anthropic, Gemini and Ollama. Switching is a dependency and configuration change.
 - `local` / `test` / `prod` profiles. In production, a missing API key fails the startup instead of shipping with an empty key.
 - Virtual threads are enabled by default, for both Tomcat and Spring's default thread pool.
@@ -28,9 +29,10 @@ A yoke is the wooden frame that makes oxen and horses pull in the direction you 
 
 ## Getting Started
 
-Requires JDK 25.
+Requires JDK 25 and Docker (for the local Redis).
 
 ```bash
+docker compose up -d            # start Redis first; the app refuses to start without it
 sdk env                         # switch to JDK 25 (if you use sdkman)
 export OPENAI_API_KEY=sk-...
 ./gradlew bootRun               # the local profile is active by default
@@ -43,7 +45,18 @@ curl -X POST localhost:8080/api/chat \
 # {"sessionId":"…","reply":"…"}
 ```
 
-Send the returned `sessionId` with later requests to continue the same conversation; conversations with different `sessionId`s are isolated from each other. Run the tests with `./gradlew build`.
+Send the returned `sessionId` with later requests to continue the same conversation. Run the tests with `./gradlew build`; tests that need a real Redis start it from the same `docker-compose.yml` through Testcontainers, and are skipped with a clear reason when Docker is not available (with `CI=true` they fail instead).
+
+### Sessions
+
+History is stored per `(userId, sessionId)`. Both are optional in the request body (`{"userId": "alice", "sessionId": "s-1", "message": "Hello"}`), and the server always makes sure both have a value before the agent sees them:
+
+- both given: that pair
+- only `sessionId`: it belongs to the `default` user (same as older clients)
+- only `userId`: a new session is created for that user, and its id is returned in the response
+- neither: a new session under the `default` user
+
+A half-empty pair is never passed on to the framework, because in AgentScope 2.0.4 a missing `sessionId` falls into one shared session named after the agent, and a missing `userId` falls into an anonymous user, which would mix everyone's history together. Both ids may only contain letters, digits, `_`, `.` and `-` (1 to 64 characters, not all dots, so `.` and `..` are rejected); anything else returns 400. The framework joins them as `userId/sessionId`, so allowing `/` would let different pairs collide on one slot, and `userId` also becomes a workspace directory name. There is no authentication yet: `userId` is whatever the caller says, so it is not an identity check.
 
 ### Streaming
 
@@ -86,18 +99,18 @@ The event names form a closed set:
 Every stream ends with either `done` or `error`. A blank `message` returns 400 before the stream starts. The temporary agent is closed when the stream completes, fails or the client disconnects.
 
 > **Note**
-> The default in-memory state store only suits a single process, and history is lost when the service restarts. For multi-instance deployments, switch to a Redis or JDBC implementation. Concurrent requests for the same session are not serialized, so avoid sending them at the same time.
+> Concurrent requests for the same session are not serialized, so avoid sending them at the same time. `HarnessAgent.close()` waits for the framework's global async-write quiescence (up to 5 seconds each for two waits) inside the per-request cleanup, so requests are coupled through it; this has not been load-tested.
 
 ## Configuration
 
 Configuration is split by profile. The `local` profile is active when none is specified; switch with the `SPRING_PROFILES_ACTIVE=prod` environment variable or the `--spring.profiles.active=prod` command-line argument.
 
-- `application.yml`: Shared by all profiles: model, agent, virtual threads, log format
-- `application-local.yml`: Local development: API key from the environment (may be empty), `com.yoke` logs at debug
-- `application-test.yml`: Automated tests: a fake API key, the model is never really called
-- `application-prod.yml`: Production: the API key must come from the environment, startup fails without it; graceful shutdown
+- `application.yml`: Shared by all profiles: model, agent, virtual threads, log format, workspace, key prefix and compaction
+- `application-local.yml`: Local development: API key from the environment (may be empty), Redis at `redis://127.0.0.1:6379` (the one from `docker-compose.yml`), `com.yoke` logs at debug
+- `application-test.yml`: Automated tests: a fake API key, the model is never really called; the Redis address is injected by the tests
+- `application-prod.yml`: Production: the API key and the Redis address (`YOKE_REDIS_URI`) must come from the environment, startup fails without them; graceful shutdown
 
-The model is created by the official AgentScope starter from `agentscope.*`, and the agent is built per request by a shared builder (the official singleton agent is turned off):
+The model is created by the official AgentScope starter from `agentscope.*`, and a `HarnessAgent` is built per request by `HarnessAgentFactory` (the official singleton agent is turned off):
 
 | Property | Description |
 |---|---|
@@ -106,6 +119,18 @@ The model is created by the official AgentScope starter from `agentscope.*`, and
 | `agentscope.openai.base-url` | Set this to use another OpenAI-compatible service (DashScope, DeepSeek, ...) |
 | `agentscope.agent.sys-prompt` | System prompt |
 | `agentscope.agent.max-iters` | Maximum number of ReAct iterations |
+
+Yoke's own settings use the `yoke.*` prefix:
+
+| Property | Description |
+|---|---|
+| `yoke.redis.uri` | Redis connection string. No default in `prod` (`YOKE_REDIS_URI`); the application fails at startup if Redis cannot be reached |
+| `yoke.redis.key-prefix` | Prefix of every Redis key, default `yoke:` |
+| `yoke.compaction.trigger-messages` | Compact the conversation once it reaches this many messages, default 30 |
+| `yoke.compaction.keep-messages` | Messages kept verbatim after a compaction, default 10. Values `<= 0`, or a keep count not smaller than the trigger count, fall back to the defaults |
+| `yoke.workspace` | `HarnessAgent` workspace for local files (offloaded messages, memory), default `~/.yoke/workspace`; it stays on the machine and is not shared between replicas |
+
+The agent is built without file, shell or web tools, and sub-agents are disabled as a whole: reading the 2.0.4 source shows that a sub-agent inherits only the file and shell switches, not the web switch, so leaving sub-agents on would let the model spawn one that can fetch arbitrary URLs. What remains is limited to the memory and session tools (`memory_save` only appends to the fixed `MEMORY.md` and `memory/<date>.md` in the workspace, without a size limit), `load_skill_through_path` and `wait_async_results`. A `MiddlewareBase` bean is attached to every new agent; `LoggingMiddleware` logs agent, model and tool timings without tool arguments or outputs. OpenTelemetry tracing is not attached by default: add an OpenTelemetry SDK and exporter and register an `OtelTracingMiddleware` bean when you need it.
 
 To use another model, replace `agentscope-openai-spring-boot-starter` in `build.gradle` with the matching starter (dashscope, anthropic, gemini or ollama) and change `agentscope.model.provider`.
 
@@ -116,10 +141,12 @@ src/main/java/com/yoke/
 ├── YokeApplication.java        Application entry point
 ├── api/                        HTTP contract (ChatApi: paths, validation and docs live here)
 ├── codec/                      Conversion between domain types and framework types (MessageCodec, EventCodec)
-├── config/                     Shared agent configuration (builder, state store)
+├── config/                     Agent and Redis configuration (HarnessAgentFactory, YokeProperties)
 ├── controller/                 Contract implementation (ChatController)
+├── middleware/                 Agent middlewares (LoggingMiddleware)
 └── model/                      Request, response and stream event objects (ChatRequest, ChatResponse, ChatEvent)
 src/main/resources/             application.yml and the per-profile configuration
+docker-compose.yml              Local Redis, also used by the integration tests
 docs/brand/                     Logo
 ```
 
@@ -129,7 +156,7 @@ docs/brand/                     Logo
 
 ## Contributing
 
-Issues and pull requests are welcome. AgentScope types must not leak out of `codec`; `ArchitectureTests` enforces this. Before submitting, run `./gradlew build` and make sure all tests pass. Code comments are written in Chinese.
+Issues and pull requests are welcome. AgentScope message and event types must not leak out of `codec` (and `middleware`, whose hook signatures need them); `ArchitectureTests` enforces this. Before submitting, run `./gradlew build` and make sure all tests pass. Code comments are written in Chinese.
 
 ## License
 
