@@ -22,6 +22,7 @@ Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke �
 - 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，通过 SSE 边推理边推送。
 - 每次请求新建临时 `HarnessAgent`，用完即关闭；对话历史保存在 Redis 里，重启不丢、多副本共享，按 `(userId, sessionId)` 隔离，对话过长时自动压缩。
 - 工具、知识库与子 Agent：计算器、时钟、按用户隔离的笔记工具，基于内置知识库的 `retrieve` 工具（返回带 `[1][2]` 编号的引用），通过 HTTP 接入外部 MCP 服务，以及两个子 Agent（一个在代码里声明，一个由工作区 Markdown 文件声明）。Agent 仍不开放文件、命令和联网工具，日志中间件为每次调用记录耗时轨迹。
+- 互通能力，全部默认关闭：把 Agent 暴露成 A2A（Agent2Agent）服务、调用远端 A2A Agent、接入 Nacos 做 Agent Card 注册发现和 Prompt 热更新。Actuator 只暴露 `health`、`info`、`metrics`、`prometheus`。
 - 通过 AgentScope 官方 starter 接入各种模型：OpenAI 兼容协议（可对接 DashScope、DeepSeek 等）、Anthropic、Gemini、Ollama，换依赖和配置即可。
 - local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
 - 默认开启虚拟线程，Tomcat 和 Spring 默认线程池都使用虚拟线程。
@@ -32,7 +33,7 @@ Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke �
 需要 JDK 25 和 Docker（用于本地 Redis）。
 
 ```bash
-docker compose up -d            # 先启动 Redis；没有 Redis 应用无法启动
+docker compose up -d redis      # 先启动 Redis；没有 Redis 应用无法启动（要用 Nacos 相关功能再加上 `nacos`）
 sdk env                         # 切换到 JDK 25（使用 sdkman 时）
 export OPENAI_API_KEY=sk-...
 ./gradlew bootRun               # 默认激活 local 环境
@@ -133,6 +134,9 @@ Yoke 自己的配置使用 `yoke.*` 前缀：
 | `yoke.compaction.keep-messages` | 压缩后原样保留的最近条数，默认 10。小于等于 0，或保留条数不小于触发条数时，回落到默认值 |
 | `yoke.workspace` | `HarnessAgent` 的工作区，放本地文件（转存的消息、记忆），默认 `~/.yoke/workspace`；只在本机，副本之间不共享 |
 | `yoke.knowledge.embedding.model-name` / `api-key` / `base-url` / `dimensions` | 可选的向量化服务（OpenAI 兼容的 `/embeddings`），用于向量检索。`model-name` 和 `api-key`（`YOKE_EMBEDDING_API_KEY`）都有值才启用向量检索，否则只用关键词检索；运行中向量化服务出错时自动退回关键词检索 |
+| `yoke.a2a.server.*` | A2A 服务端，**默认关闭**（`enabled`）。`token`（`YOKE_A2A_TOKEN`）是可选的 Bearer Token，`public-url` 是写进 Agent Card 的对外根地址，`timeout` 默认 120 秒，`card.*` 是名字、描述、版本和技能。详见 [A2A 与 Nacos](#a2a-与-nacos) |
+| `yoke.a2a.remote.*` | 要调用的远端 A2A Agent：`url`（well-known 直连）或 `agent-name`（经 Nacos 发现），另有可选的 `token` 和 `timeout`（默认 30 秒）。默认都不配置，此时 `/api/chat/remote` 不存在 |
+| `yoke.nacos.*` | Nacos 连接（`server-addr` 默认 `127.0.0.1:8848`、`namespace`、`username` / `password` 来自环境变量 `YOKE_NACOS_USERNAME` / `YOKE_NACOS_PASSWORD`）和开关 `a2a.enabled`、`prompt.enabled`（及 `prompt.key`），全部默认关闭且互不绑定 |
 | `yoke.mcp.servers[]` | 外部 MCP 服务，默认一个也不接。每项有 `name`、`transport`（只能是 `sse` 或 `streamable-http`）、`url`、`timeout`（默认 30 秒）和可选的 `headers`。配置 `stdio` 会让应用启动失败；服务连不上同样启动失败 |
 
 Agent 创建时不开放文件、命令和联网工具。读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，所以联网工具除了主 Agent 的 `disableWebTools()`，还用 `ToolsConfig` 的 deny 名单禁掉，它同时作用于主 Agent、内置的 `general-purpose` 子 Agent 和所有声明的子 Agent。显式传入 `ToolsConfig` 还会让 2.0.4 不再去读工作区里的 `tools.json`（那个文件可以声明 `stdio` MCP 服务，也就是在宿主机上启动进程）。模型看到的工具恰好是：Yoke 自己的（`get_current_time`、`calculate`、`list_my_notes`、`retrieve`），框架的记忆、会话、技能加载、异步结果、子 Agent 和后台任务类工具（`memory_save` 只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制），再加上所配置的 MCP 服务公布的工具。`ToolPermissionTests` 用精确集合断言这份清单，框架升级新增了工具会让构建失败。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
@@ -160,22 +164,70 @@ Agent 创建时不开放文件、命令和联网工具。读 2.0.4 源码发现�
 
 要换成其他模型，把 `build.gradle` 里的 `agentscope-openai-spring-boot-starter` 换成对应的 starter（dashscope、anthropic、gemini、ollama），并修改 `agentscope.model.provider`。
 
+## A2A 与 Nacos
+
+本节的能力**默认全部关闭**。
+
+### A2A 服务端
+
+```bash
+export YOKE_A2A_TOKEN=$(openssl rand -hex 24)
+./gradlew bootRun --args='--yoke.a2a.server.enabled=true --yoke.a2a.server.public-url=http://localhost:8080'
+```
+
+开启后多出两个端点：`GET /.well-known/agent-card.json`（公开）和 `POST /a2a`（JSON-RPC，只处理 `message/send`），契约写在 `A2aApi` 里。
+
+> **警告**
+> 开启就是暴露一个**无认证**的入口，能力等价于 `/api/chat`（同一批工具、同一个历史存储），调用方还能自报任意 `userId`。生产必须放在网关后面，或者至少配置 `yoke.a2a.server.token`：配置后 JSON-RPC 端点要求 `Authorization: Bearer <token>`（常量时间比较，否则 401），Agent Card 里同步声明 Bearer 认证。不配置 token 就不做任何校验，启动时会打一条 WARN。
+
+- 协议：AgentScope 2.0.4 实现的是 A2A 0.3（SDK `0.3.3.Final`，`protocolVersion` 为 `0.3.0`），只有 JSON-RPC 传输。以上以 2.0.4 为准，更新版本的 AgentScope 已改为 A2A 1.0、不再支持 0.3，请以对应版本的手册为准。只提供同步的 `message/send`（Card 里 `streaming: false`）；`message/stream` 和 `tasks/resubscribe` 返回「不支持的操作」，其余方法返回「方法不存在」。
+- 传输安全：Bearer Token 走明文 HTTP，`public-url` 缺省是 `http://localhost:端口`。生产要用 `https` 的对外地址，或由网关终结 TLS。token 少于 16 个字符会启动失败。请求体超过 `yoke.a2a.server.max-body-bytes`（默认 256 KB）返回 413（响应体 `-32600`）：认证先于读体，声明的 `Content-Length` 超限不读体，chunked 请求限长读取；`/api/chat` 没有这类自定义上限。
+- 会话：`sessionId` 取 `metadata.sessionId`，没有则取 `contextId`，再没有就新建；`userId` 取 `metadata.userId`，缺失为 `default`。二者和 HTTP 接口用同一条 `@SafeId` 规则，不合法返回 `-32602`。响应里的 `contextId` 就是会话 ID，带上它即可延续对话。
+- 失败返回 JSON-RPC 的 `-32603`，消息是固定的一句话，不含异常内容。
+- 没有使用官方的 `agentscope-a2a-spring-boot-starter`：它只认 `ReActAgent`，自带的控制器没有认证，Card 里的 `streaming` 还固定写成 `true`。
+
+### 调用远端 A2A Agent
+
+配置 `yoke.a2a.remote.url`（或 `agent-name` 并开启 `yoke.nacos.a2a.enabled=true`）后出现 `POST /api/chat/remote`：`{"sessionId": "...", "message": "..."}`。调用目标只来自配置，请求体里没有任何字段能影响它。直连 URL 时，远端 Agent Card 里**所有**声明服务地址的位置（`url` 和 `additionalInterfaces` 的每一项）都必须与配置同源，且首选传输必须是 JSONRPC，否则拒绝调用（官方客户端从首选传输和 additionalInterfaces 里挑 JSON-RPC 地址，只比较 `url` 会被绕过）。HTTP 客户端不跟随重定向，请求有超时。失败返回 `502`（超时 `504`），响应里不含地址和凭证。这个端点同样没有认证。它有意不作为工具暴露给模型，免得远端的内容左右模型。
+
+### Nacos
+
+```bash
+docker compose up -d redis nacos        # Nacos 3.x 单机，固定 v3.2.1-2026.03.30
+export YOKE_NACOS_ADDR=127.0.0.1:8848
+./gradlew bootRun --args='--yoke.nacos.prompt.enabled=true --yoke.nacos.a2a.enabled=true --yoke.a2a.server.enabled=true'
+```
+
+- 一条 gRPC 通道承载全部数据，需要 Nacos 3.x（客户端端口 = 主端口 + 1000，默认 9848）。任何一个开关打开，启动时都会探活，不可用就启动失败，报错信息清晰且不含凭证。
+- `yoke.nacos.a2a.enabled`：A2A 服务端开启时，应用就绪后注册 Agent Card 和端点（关闭时注销）；配了 `yoke.a2a.remote.agent-name` 时按名字发现远端。
+- `yoke.nacos.prompt.enabled`：每轮对话从 Nacos 拉取 Prompt `yoke.nacos.prompt.key`，追加在内置系统提示词之后（不重复拼接；拉取失败就原样使用内置提示词）。发布新版本后，下一轮对话即可生效，中间有很短的服务端传播延迟（对 compose 里的镜像实测 25 到 270 毫秒）。
+- 信任边界：谁能写 Nacos 里这个 Prompt Key，谁就能改 Yoke 的系统提示词（它追加在内置提示词之后，实测子 Agent 也会带上）。来源必须受信，生产必须开启 Nacos 鉴权。每次拉取有超时（`yoke.nacos.prompt.timeout`，默认 2 秒），超时或失败沿用内置提示词，警告日志有限频。
+- Nacos 客户端的日志和快照缓存被重定向到 `<yoke.workspace>/nacos`（`JM.LOG.PATH`、`JM.SNAPSHOT.PATH`），不再写 `~/logs/nacos` 和 `~/nacos`。客户端自己登录失败的那行日志仍会显示打码后的部分密码。
+- Skill 托管（`nacos-skill`）没有接入。
+- `docker-compose.yml` 里的 Nacos 关闭了鉴权，仅限本地研发；生产必须开启鉴权并替换其中的占位密钥。
+
+### 可观测
+
+Actuator 只暴露 `health`、`info`、`metrics`、`prometheus`（`ActuatorExposureTests` 精确断言），`env`、`heapdump` 之类一律不暴露；`health` 包含 Redis，但不显示明细。这些端点和业务接口在同一个端口，同样没有认证：请放在网关后面，或用 `MANAGEMENT_SERVER_PORT` 挪到内部端口。
+
 ## 项目结构
 
 ```
 src/main/java/com/yoke/
 ├── YokeApplication.java        应用入口
-├── api/                        HTTP 接口契约（ChatApi，路径、校验和文档都在这里）
+├── a2a/                        A2A 服务端网关、runner（a2a/runner 把 HarnessAgent 适配成 A2A 的 AgentRunner）和远端客户端
+├── api/                        HTTP 接口契约（ChatApi、A2aApi、RemoteChatApi，路径、校验和文档都在这里）
 ├── codec/                      领域类型与框架类型之间的转换（MessageCodec、EventCodec）
 ├── config/                     Agent、Redis、工具、知识库与子 Agent 配置（HarnessAgentFactory、YokeProperties、YokeSubagents）
 ├── controller/                 接口实现（ChatController）
 ├── knowledge/                  检索端口及实现：关键词、向量、RRF 融合（不含框架类型）
 ├── mcp/                        到外部 MCP 服务的连接（只支持 HTTP 传输）
 ├── middleware/                 Agent 中间件（LoggingMiddleware）
+├── nacos/                      Nacos 客户端探活、A2A 注册、Prompt 热更新中间件
 ├── model/                      请求、响应与流式事件对象（ChatRequest、ChatResponse、ChatEvent）
 └── tool/                       暴露给模型的工具（ChatTools、RetrieveTool、UserContext）
 src/main/resources/             application.yml、各环境配置、knowledge/*.md 和 workspace/subagents/*.md
-docker-compose.yml              本地 Redis，集成测试也用它
+docker-compose.yml              本地 Redis 和 Nacos，集成测试也用它
 docs/brand/                     logo
 ```
 
@@ -186,7 +238,7 @@ docs/brand/                     logo
 
 ## 参与贡献
 
-欢迎提交 Issue 和 Pull Request。提交前请运行 `./gradlew build` 确保全部测试通过；代码注释使用中文。AgentScope 的消息和事件类型不能泄漏到 `codec` 之外（`middleware` 除外，它的钩子签名本身就要用这些类型），`knowledge` 包不能出现任何 AgentScope 类型，`ArchitectureTests` 会检查这些。
+欢迎提交 Issue 和 Pull Request。提交前请运行 `./gradlew build` 确保全部测试通过；代码注释使用中文。AgentScope 的消息和事件类型不能泄漏到 `codec` 之外（`middleware` 除外，它的钩子签名本身就要用这些类型），`knowledge` 包不能出现任何 AgentScope 类型，`a2a` / `nacos` 包只能用明确白名单里的框架类型，`ArchitectureTests` 会检查这些。Nacos 集成测试会用 `docker-compose.yml` 里的 `nacos` 服务（第一次拉镜像较慢）。
 
 ## 许可证
 

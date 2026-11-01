@@ -1,0 +1,151 @@
+package com.yoke.a2a;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+
+import io.a2a.client.http.A2AHttpClient;
+import io.a2a.client.http.A2AHttpResponse;
+
+/**
+ * 给 A2A 客户端用的 HTTP 客户端：<b>不跟随重定向</b>，并给每个请求设上超时。
+ *
+ * <p>官方的 {@code JdkA2AHttpClient} 用 {@code Redirect.NORMAL}（读 0.3.3.Final 字节码所得，并实测）：
+ * 远端对 {@code POST /a2a} 回一个 307，客户端会把消息体原样重发到 Location 指向的任意主机。
+ * 同源校验只管 Agent Card 里的地址，管不到重定向，所以这里直接把重定向关掉：3xx 当作失败。
+ * 超时也一并解决了「{@code Mono.timeout} 只取消等待、底层请求还挂着」的问题。
+ *
+ * <p>只实现同步的 GET 和 POST：Yoke 的客户端是非流式的，SSE 和 DELETE 不会被用到，调用即报错。
+ */
+public class NoRedirectHttpClient implements A2AHttpClient {
+
+    private final HttpClient client;
+    private final Duration requestTimeout;
+
+    public NoRedirectHttpClient(Duration requestTimeout) {
+        this.requestTimeout = requestTimeout;
+        this.client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
+                .connectTimeout(Duration.ofSeconds(10)).build();
+    }
+
+    @Override
+    public GetBuilder createGet() {
+        return new Get();
+    }
+
+    @Override
+    public PostBuilder createPost() {
+        return new Post();
+    }
+
+    @Override
+    public DeleteBuilder createDelete() {
+        throw new UnsupportedOperationException("Yoke 的 A2A 客户端不使用 DELETE");
+    }
+
+    private abstract static class Base<T extends Builder<T>> implements Builder<T> {
+        String url;
+        final Map<String, String> headers = new HashMap<>();
+
+        abstract T self();
+
+        @Override
+        public T url(String url) {
+            this.url = url;
+            return self();
+        }
+
+        @Override
+        public T addHeaders(Map<String, String> more) {
+            headers.putAll(more);
+            return self();
+        }
+
+        @Override
+        public T addHeader(String name, String value) {
+            headers.put(name, value);
+            return self();
+        }
+    }
+
+    private HttpRequest.Builder request(Base<?> base) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base.url)).timeout(requestTimeout);
+        base.headers.forEach(builder::header);
+        return builder;
+    }
+
+    private A2AHttpResponse send(HttpRequest request) throws IOException, InterruptedException {
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        int status = response.statusCode();
+        return new A2AHttpResponse() {
+            @Override
+            public int status() {
+                return status;
+            }
+
+            @Override
+            public boolean success() {
+                return status >= 200 && status < 300;
+            }
+
+            @Override
+            public String body() {
+                return response.body();
+            }
+        };
+    }
+
+    private final class Get extends Base<GetBuilder> implements GetBuilder {
+
+        @Override
+        GetBuilder self() {
+            return this;
+        }
+
+        @Override
+        public A2AHttpResponse get() throws IOException, InterruptedException {
+            return send(request(this).GET().build());
+        }
+
+        @Override
+        public CompletableFuture<Void> getAsyncSSE(Consumer<String> messageConsumer, Consumer<Throwable> errorConsumer,
+                Runnable completeRunnable) {
+            throw new UnsupportedOperationException("Yoke 的 A2A 客户端不使用流式");
+        }
+    }
+
+    private final class Post extends Base<PostBuilder> implements PostBuilder {
+
+        private String body = "";
+
+        @Override
+        PostBuilder self() {
+            return this;
+        }
+
+        @Override
+        public PostBuilder body(String body) {
+            this.body = body;
+            return this;
+        }
+
+        @Override
+        public A2AHttpResponse post() throws IOException, InterruptedException {
+            return send(request(this).POST(HttpRequest.BodyPublishers.ofString(body)).build());
+        }
+
+        @Override
+        public CompletableFuture<Void> postAsyncSSE(Consumer<String> messageConsumer, Consumer<Throwable> errorConsumer,
+                Runnable completeRunnable) {
+            throw new UnsupportedOperationException("Yoke 的 A2A 客户端不使用流式");
+        }
+    }
+}

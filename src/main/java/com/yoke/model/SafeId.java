@@ -36,7 +36,12 @@ public @interface SafeId {
             if (value == null || value.isBlank()) {
                 return true;
             }
-            return value.matches("[A-Za-z0-9_.-]{1,64}") && !value.matches("\\.+");
+            return isSafe(value);
+        }
+
+        /** 规则本身，HTTP 的参数校验和 A2A 入口共用这一处，两个入口不会各改各的。 */
+        public static boolean isSafe(String value) {
+            return value != null && value.matches("[A-Za-z0-9_.-]{1,64}") && !value.matches("\\.+");
         }
     }
 }

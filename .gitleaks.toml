@@ -1,0 +1,20 @@
+# gitleaks 配置：沿用默认规则，只放行下面两类经确认的误报。
+# 按「路径 + 内容」登记，而不是按行号（.gitleaksignore 的指纹带行号，改动文件就会失效）。
+# 新增条目前先确认确实不是真实密钥，并写明理由。
+title = "Yoke gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "docker-compose.yml 里 Nacos 要求非空的开发用占位值（Base64 解码后是 yoke-local-dev-only-not-a-secret-0123456789），文件注释已写明仅限本地、生产必须换成自己生成的随机值"
+condition = "AND"
+paths = ['''^docker-compose\.yml$''']
+regexes = ['''^eW9rZS1sb2NhbC1kZXYtb25seS1ub3QtYS1zZWNyZXQtMDEyMzQ1Njc4OQ==$''']
+
+[[allowlists]]
+description = "测试里故意编造的密码和令牌，用来断言报错信息、日志和 toString 里不会带出它们"
+condition = "AND"
+paths = ['''^src/test/java/com/yoke/(nacos|config)/[A-Za-z0-9]+Tests\.java$''']
+# 逐个列出测试里实际使用的完整假值，并锚定首尾，不放行含有这些片段的其他字符串
+regexes = ['''^S3cret-Pass-xyz$''', '''^server-token-AAA$''', '''^remote-token-BBB$''', '''^nacos-pass-CCC$''', '''^0123456789abcdef$''']

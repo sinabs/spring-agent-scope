@@ -56,6 +56,8 @@ public final class RedisCompose {
         // compose 文件里宿主机端口来自 REDIS_PORT，这里换成空闲端口，避免和本机正在跑的 Redis 冲突
         compose = new ComposeContainer(new File("docker-compose.yml"))
                 .withEnv("REDIS_PORT", String.valueOf(hostPort))
+                // compose 文件里还有 Nacos 等服务，这里只需要 Redis，别把别的也拉起来
+                .withServices(SERVICE)
                 .withExposedService(SERVICE, REDIS_PORT, Wait.forHealthcheck());
         compose.start();
         Runtime.getRuntime().addShutdownHook(new Thread(compose::stop));
