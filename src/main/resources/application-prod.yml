@@ -7,6 +7,10 @@ agentscope:
     api-key: ${OPENAI_API_KEY}
 
 yoke:
+  knowledge:
+    embedding:
+      # 可选：不设置时检索只用关键词，不影响启动（与 OPENAI_API_KEY 不同，缺失不是错误）
+      api-key: ${YOKE_EMBEDDING_API_KEY:}
   redis:
     # 生产环境必须通过环境变量提供 Redis 连接串（含密码时用 redis://:密码@主机:端口），没有设置时启动即失败
     uri: ${YOKE_REDIS_URI}

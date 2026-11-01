@@ -58,4 +58,29 @@ class ArchitectureTests {
     static final ArchRule 框架的消息和事件类型只能出现在codec和middleware里 = noClasses()
             .that().resideOutsideOfPackages("com.yoke.codec..", "com.yoke.middleware..")
             .should().dependOnClassesThat().resideInAnyPackage("io.agentscope.core.message..", "io.agentscope.core.event..");
+
+    /**
+     * 检索端口是应用层自己的接口：不依赖 AgentScope（2.0.4 里框架的 rag 包已标记为将移除），
+     * 以后换向量库、换检索算法都不影响 Agent 和工具。向量化客户端、关键词检索、融合与降级都在这个包里。
+     */
+    @ArchTest
+    static final ArchRule 知识库检索包不依赖框架 = noClasses().that().resideInAPackage("com.yoke.knowledge..")
+            .should().dependOnClassesThat().resideInAPackage("io.agentscope..");
+
+    @ArchTest
+    static final ArchRule 知识库检索包不反向依赖工具_配置和接口层 = noClasses().that().resideInAPackage("com.yoke.knowledge..")
+            .should().dependOnClassesThat().resideInAnyPackage("com.yoke.tool..", "com.yoke.mcp..", "com.yoke.config..",
+                    "com.yoke.controller..", "com.yoke.api..");
+
+    /** 工具类只允许用框架的工具注解和 Toolkit 一族（io.agentscope.core.tool），不碰 Agent、模型、消息。 */
+    @ArchTest
+    static final ArchRule 工具类只依赖框架的tool包 = noClasses().that().resideInAPackage("com.yoke.tool..")
+            .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
+                    DescribedPredicate.not(resideInAPackage("io.agentscope.core.tool.."))));
+
+    /** MCP 连接只用框架的 tool 包（McpClientBuilder、Toolkit 都在那里）。 */
+    @ArchTest
+    static final ArchRule MCP连接只依赖框架的tool包 = noClasses().that().resideInAPackage("com.yoke.mcp..")
+            .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
+                    DescribedPredicate.not(resideInAPackage("io.agentscope.core.tool.."))));
 }

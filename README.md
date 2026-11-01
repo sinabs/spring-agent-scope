@@ -21,7 +21,7 @@ A yoke is the wooden frame that makes oxen and horses pull in the direction you 
 
 - One endpoint for multi-turn conversations: `POST /api/chat`, plus `POST /api/chat/stream` that streams the reasoning process over SSE.
 - A temporary `HarnessAgent` is built for every request and closed afterwards; conversation history lives in Redis, so it survives restarts and is shared by all replicas. History is isolated per `(userId, sessionId)`, and long conversations are compacted automatically.
-- The agent has no file, shell or web tools and sub-agents are switched off, and a logging middleware records a timing trace for every call.
+- Tools, knowledge and sub-agents: calculator, clock and per-user notes tools, a `retrieve` tool over a built-in knowledge base that returns `[1][2]`-numbered citations, external MCP servers over HTTP, and two sub-agents (one declared in code, one declared as a workspace Markdown file). The agent still has no file, shell or web tools, and a logging middleware records a timing trace for every call.
 - Models are plugged in through the official AgentScope starters: OpenAI-compatible APIs (works with DashScope, DeepSeek and others), Anthropic, Gemini and Ollama. Switching is a dependency and configuration change.
 - `local` / `test` / `prod` profiles. In production, a missing API key fails the startup instead of shipping with an empty key.
 - Virtual threads are enabled by default, for both Tomcat and Spring's default thread pool.
@@ -105,8 +105,8 @@ Every stream ends with either `done` or `error`. A blank `message` returns 400 b
 
 Configuration is split by profile. The `local` profile is active when none is specified; switch with the `SPRING_PROFILES_ACTIVE=prod` environment variable or the `--spring.profiles.active=prod` command-line argument.
 
-- `application.yml`: Shared by all profiles: model, agent, virtual threads, log format, workspace, key prefix and compaction
-- `application-local.yml`: Local development: API key from the environment (may be empty), Redis at `redis://127.0.0.1:6379` (the one from `docker-compose.yml`), `com.yoke` logs at debug
+- `application.yml`: Shared by all profiles: model, agent, virtual threads, log format, workspace, key prefix, compaction, knowledge-base embedding and the (commented) MCP example
+- `application-local.yml`: Local development: API keys from the environment (may be empty), Redis at `redis://127.0.0.1:6379` (the one from `docker-compose.yml`), `com.yoke` logs at debug
 - `application-test.yml`: Automated tests: a fake API key, the model is never really called; the Redis address is injected by the tests
 - `application-prod.yml`: Production: the API key and the Redis address (`YOKE_REDIS_URI`) must come from the environment, startup fails without them; graceful shutdown
 
@@ -129,8 +129,31 @@ Yoke's own settings use the `yoke.*` prefix:
 | `yoke.compaction.trigger-messages` | Compact the conversation once it reaches this many messages, default 30 |
 | `yoke.compaction.keep-messages` | Messages kept verbatim after a compaction, default 10. Values `<= 0`, or a keep count not smaller than the trigger count, fall back to the defaults |
 | `yoke.workspace` | `HarnessAgent` workspace for local files (offloaded messages, memory), default `~/.yoke/workspace`; it stays on the machine and is not shared between replicas |
+| `yoke.knowledge.embedding.model-name` / `api-key` / `base-url` / `dimensions` | Optional embedding service (OpenAI-compatible `/embeddings`) for vector retrieval. Vector retrieval is enabled only when both `model-name` and `api-key` (`YOKE_EMBEDDING_API_KEY`) are set; otherwise retrieval uses keywords only. If the service fails at runtime, retrieval falls back to keywords automatically |
+| `yoke.mcp.servers[]` | External MCP servers, none by default. Each entry has `name`, `transport` (`sse` or `streamable-http` only), `url`, `timeout` (default 30s) and optional `headers`. `stdio` is rejected and the application fails at startup; so is a server that cannot be reached |
 
-The agent is built without file, shell or web tools, and sub-agents are disabled as a whole: reading the 2.0.4 source shows that a sub-agent inherits only the file and shell switches, not the web switch, so leaving sub-agents on would let the model spawn one that can fetch arbitrary URLs. What remains is limited to the memory and session tools (`memory_save` only appends to the fixed `MEMORY.md` and `memory/<date>.md` in the workspace, without a size limit), `load_skill_through_path` and `wait_async_results`. A `MiddlewareBase` bean is attached to every new agent; `LoggingMiddleware` logs agent, model and tool timings without tool arguments or outputs. OpenTelemetry tracing is not attached by default: add an OpenTelemetry SDK and exporter and register an `OtelTracingMiddleware` bean when you need it.
+The agent is built without file, shell or web tools. Reading the 2.0.4 source shows that a sub-agent inherits only the file and shell switches, not the web switch, so the web tools are also denied through a `ToolsConfig` deny list (on top of `disableWebTools()` for the main agent), which is applied to the main agent, the built-in `general-purpose` sub-agent and every declared sub-agent. Passing an explicit `ToolsConfig` also stops 2.0.4 from reading `tools.json` from the workspace, which could otherwise declare `stdio` MCP servers (processes started on the host). The model sees exactly these tools: Yoke's own (`get_current_time`, `calculate`, `list_my_notes`, `retrieve`), the framework's memory, session, skill-loading, async-result, sub-agent and background-task tools (`memory_save` only appends to the fixed `MEMORY.md` and `memory/<date>.md` in the workspace, without a size limit), plus whatever the configured MCP servers publish. `ToolPermissionTests` asserts this list as an exact set, so a framework upgrade that adds a tool fails the build. A `MiddlewareBase` bean is attached to every new agent; `LoggingMiddleware` logs agent, model and tool timings without tool arguments or outputs. OpenTelemetry tracing is not attached by default: add an OpenTelemetry SDK and exporter and register an `OtelTracingMiddleware` bean when you need it.
+
+## Tools, Knowledge and Sub-agents
+
+- **Tools** (`com.yoke.tool`): plain classes with `@Tool` methods, registered once into a shared `Toolkit`. `calculate` uses a hand-written recursive-descent parser (no script engine, input length and nesting limits, division by zero reported as text). `list_my_notes` takes a `UserContext` parameter without `@ToolParam`: the framework injects it by type from the request's `RuntimeContext`, so the model never sees or forges the user id.
+- **Retrieval**: the `retrieve` tool searches `src/main/resources/knowledge/*.md` and returns passages numbered `[1]`, `[2]` with their source, which the model is asked to cite. It is the only retrieval channel; the framework's `knowledge()` auto-injection is deliberately not used. Retrieval is layered behind the application's own `RetrievePort` (no framework types): BM25 keyword search is always available, and with an embedding service configured a vector channel is added and the two are fused with RRF (constant 60); if one channel fails the other is used. Note that with embeddings enabled, user queries and the knowledge-base text are sent to the embedding provider. The framework's own `rag-simple` module is not used: the `core/rag` package is `@Deprecated(forRemoval = true)` in 2.0.4 and the module drags in Qdrant, Milvus, Elasticsearch, PostgreSQL, PDFBox, POI, Tika and more.
+- **MCP**: only HTTP transports are accepted. Example:
+
+  ```yaml
+  yoke:
+    mcp:
+      servers:
+        - name: docs
+          transport: streamable-http   # or sse
+          url: https://mcp.example.com/mcp
+          timeout: 30s
+          headers:
+            Authorization: Bearer ${MCP_DOCS_TOKEN}
+  ```
+
+  Tools appear under the names the server publishes. In 2.0.4 an MCP tool runs without confirmation only if the server marks it `readOnlyHint`, and Yoke's HTTP API has no human confirmation channel (the turn would otherwise end silently at the tool call with an empty reply). So only tools declared read-only are registered; the others are skipped (their names are logged at INFO) and neither the main agent nor any sub-agent ever sees them.
+- **Sub-agents**: `summarizer` is declared in code (`YokeSubagents`) with no tools; `kb-researcher` is declared by `src/main/resources/workspace/subagents/kb-researcher.md`, copied into `yoke.workspace/subagents/` at startup, and may only use `retrieve`. 2.0.4 silently lets a workspace file override a code declaration with the same id (and `general-purpose.md` would replace the built-in one), so Yoke scans the files actually present in `yoke.workspace/subagents/` (including leftovers and hand-placed ones, not just the shipped ones) and fails at startup on any such clash.
 
 To use another model, replace `agentscope-openai-spring-boot-starter` in `build.gradle` with the matching starter (dashscope, anthropic, gemini or ollama) and change `agentscope.model.provider`.
 
@@ -141,11 +164,14 @@ src/main/java/com/yoke/
 ├── YokeApplication.java        Application entry point
 ├── api/                        HTTP contract (ChatApi: paths, validation and docs live here)
 ├── codec/                      Conversion between domain types and framework types (MessageCodec, EventCodec)
-├── config/                     Agent and Redis configuration (HarnessAgentFactory, YokeProperties)
+├── config/                     Agent, Redis, tool, knowledge and sub-agent configuration (HarnessAgentFactory, YokeProperties, YokeSubagents)
 ├── controller/                 Contract implementation (ChatController)
+├── knowledge/                  Retrieval port and implementations: keyword, vector, RRF fusion (no framework types)
+├── mcp/                        Connections to external MCP servers (HTTP transports only)
 ├── middleware/                 Agent middlewares (LoggingMiddleware)
-└── model/                      Request, response and stream event objects (ChatRequest, ChatResponse, ChatEvent)
-src/main/resources/             application.yml and the per-profile configuration
+├── model/                      Request, response and stream event objects (ChatRequest, ChatResponse, ChatEvent)
+└── tool/                       Tools exposed to the model (ChatTools, RetrieveTool, UserContext)
+src/main/resources/             application.yml, the per-profile configuration, knowledge/*.md and workspace/subagents/*.md
 docker-compose.yml              Local Redis, also used by the integration tests
 docs/brand/                     Logo
 ```
@@ -156,7 +182,7 @@ docs/brand/                     Logo
 
 ## Contributing
 
-Issues and pull requests are welcome. AgentScope message and event types must not leak out of `codec` (and `middleware`, whose hook signatures need them); `ArchitectureTests` enforces this. Before submitting, run `./gradlew build` and make sure all tests pass. Code comments are written in Chinese.
+Issues and pull requests are welcome. AgentScope message and event types must not leak out of `codec` (and `middleware`, whose hook signatures need them), and the `knowledge` package must stay free of AgentScope types; `ArchitectureTests` enforces this. Before submitting, run `./gradlew build` and make sure all tests pass. Code comments are written in Chinese.
 
 ## License
 

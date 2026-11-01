@@ -38,13 +38,37 @@ import org.springframework.web.bind.annotation.RequestMapping;
  * <p>实现说明：暂时没有鉴权，{@code userId} 由调用方自报，不可信，不要把它当成身份校验；
  * 同一个会话的并发请求不会被串行化，由调用方保证同一会话同一时间只发一个请求。
  *
- * <p>工具权限：Agent 不开放文件读写、命令执行和联网工具，也整体关闭了子 Agent。
- * 读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，
- * 开着子 Agent 就能让模型通过 {@code agent_spawn} 派生出能联网的子 Agent，所以整体关闭。
- * 关闭后模型仍能用的只有 {@code memory_save}、{@code memory_get}、{@code memory_search}、{@code session_history}、
- * {@code session_list}、{@code session_search}、{@code load_skill_through_path} 和 {@code wait_async_results}：
- * 联网路径已经没有；{@code memory_save} 是唯一写盘的，只往工作区里固定的 {@code MEMORY.md} 和
- * {@code memory/<日期>.md} 追加，路径不由模型控制，但追加的内容没有大小限制。
+ * <p>模型可以使用的工具（精确清单由 ToolPermissionTests 守着）：
+ * <ul>
+ *   <li>Yoke 自带：{@code get_current_time}（带时区偏移的当前时间）、{@code calculate}（四则运算，手写解析器，不执行任何代码）、
+ *       {@code list_my_notes}（当前用户的笔记，演示数据）、{@code retrieve}（在 Yoke 自己的知识库里检索）；</li>
+ *   <li>框架内置：{@code memory_save}、{@code memory_get}、{@code memory_search}、{@code session_history}、
+ *       {@code session_list}、{@code session_search}、{@code load_skill_through_path}、{@code wait_async_results}，
+ *       以及子 Agent 和后台任务相关的 {@code agent_spawn}、{@code agent_send}、{@code agent_list}、
+ *       {@code task_output}、{@code task_cancel}、{@code task_list}；</li>
+ *   <li>配置了 {@code yoke.mcp.servers} 时，再加上 MCP 服务公布的工具，工具名是服务端公布的原名，不加前缀。</li>
+ * </ul>
+ * 不开放文件读写、命令执行和联网（{@code web_fetch}、{@code web_search}）：主 Agent 同时用 {@code disableWebTools} 和工具配置的 deny 名单，子 Agent 只靠 deny 名单（它们不继承 {@code disableWebTools}）。其中 {@code memory_save} 是唯一写盘的，
+ * 只往工作区里固定的 {@code MEMORY.md} 和 {@code memory/<日期>.md} 追加，路径不由模型控制，但追加的内容没有大小限制。
+ *
+ * <p>业务上下文不经过模型：{@code list_my_notes} 要知道「当前用户是谁」，userId 由控制器放进 RuntimeContext，
+ * 工具按类型取用，不是模型传的参数，模型看不到也伪造不了。这个 userId 本身仍是调用方自报的（见上面的实现说明）。
+ *
+ * <p>引用格式：{@code retrieve} 返回的资料带 {@code [1]}、{@code [2]} 这样的编号和来源文档标题，
+ * 模型回答时按相同编号标注出处，调用方可以据此回溯。检索是工具化的，只有模型认为需要时才会调用，
+ * 没有同时开启框架的 knowledge 自动注入。没有配置向量化服务时只用关键词检索，向量化服务出错时自动退回关键词检索。
+ *
+ * <p>子 Agent：{@code summarizer}（代码里声明，只做摘要，没有任何业务工具）、{@code kb-researcher}
+ * （工作区文件 {@code workspace/subagents/kb-researcher.md} 声明，只能用 {@code retrieve}）和框架内置的
+ * {@code general-purpose}（继承 Yoke 的业务工具）。2.0.4 里子 Agent 不继承父 Agent 的联网工具关闭，所以联网工具靠工具配置里的
+ * deny 名单在所有层（主 Agent、内置子 Agent、声明的子 Agent）一并禁掉；子 Agent 同样没有文件读写和命令执行，也不能再派生子 Agent。
+ *
+ * <p>MCP 工具的授权：2.0.4 对 MCP 工具只放行服务端声明了 {@code readOnlyHint} 的，其余需要用户确认，
+ * 而本接口没有人工确认通道，否则一轮对话会在工具调用处无声结束、调用方拿到空回复。
+ * 所以注册时就只放行声明了只读的工具，其余跳过（启动日志里记工具名），模型根本看不到它们，
+ * 这对主 Agent 和子 Agent 都成立。MCP 服务配置的服务连不上时，应用启动失败。
+ *
+ * <p>隐私：配置了向量化服务（{@code yoke.knowledge.embedding}）后，用户的检索问题和知识库语料会发送给该服务的提供方。
  *
  * <p>已知限制：{@code HarnessAgent.close()} 会等待框架里全局的异步写入静默
  * （{@code awaitMirrorQuiescence} 和 {@code awaitQuiescence}，各最长 5 秒），它在每个请求的清理回调里执行，

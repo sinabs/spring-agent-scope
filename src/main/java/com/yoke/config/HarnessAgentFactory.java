@@ -5,9 +5,11 @@ import java.util.List;
 
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -29,6 +31,9 @@ public class HarnessAgentFactory {
     private final Path workspace;
     private final YokeProperties.Compaction compaction;
     private final List<MiddlewareBase> middlewares;
+    /** 共享的 Toolkit 模板，里面是 Yoke 自己的工具和 MCP 工具；启动后不再修改，Harness 的 build() 会先拷贝再往副本里加内置工具。 */
+    private final Toolkit toolkit;
+    private final List<SubagentDeclaration> subagents;
 
     public HarnessAgent create() {
         return HarnessAgent.builder()
@@ -41,13 +46,20 @@ public class HarnessAgentFactory {
                 .distributedStore(distributedStore)
                 .compaction(compactionConfig())
                 .middlewares(middlewares)
-                // 权限取舍：对外服务的 Agent 不给读写文件和执行命令的能力，联网搜索同理
+                // 共享同一个模板是安全的：2.0.4 的 build() 先 toolkit.copy() 再注册内置工具，模板不会被污染（见 SharedToolkitTests）
+                .toolkit(toolkit)
+                .subagents(subagents)
+                // 权限取舍：对外服务的 Agent 不给读写文件和执行命令的能力
                 .disableFilesystemTools()
                 .disableShellTool()
+                // 联网工具两道防线并用：disableWebTools 管主 Agent（按开关，框架改名也有效），
+                // ToolsConfig.deny 管所有层——子 Agent 只继承文件和 shell 的关闭、不继承 web 的关闭
+                // （2.0.4 的 HarnessAgentBuilderSupport 只传这两个），会自己注册 web_fetch / web_search，只能靠 deny 按名字移除，
+                // 它会同时传给内置的 general-purpose 和所有声明的子 Agent。
+                // 代价：主 Agent 构建时 web 工具未注册，ToolFilter 对 deny 里的名字每次打 WARN（实测两条），在 application.yml 里调低了级别。
+                // 显式传 toolsConfig 还让 2.0.4 不再去读工作区里的 tools.json（里面能声明 stdio MCP 服务）
                 .disableWebTools()
-                // 子 Agent 只继承文件和 shell 的关闭，不继承 web 的关闭（2.0.4 的 HarnessAgentBuilderSupport 只传这两个），
-                // 开着就能让模型通过 agent_spawn 派生出带 web_fetch 的子 Agent 联网；第 03 轮专门引入子 Agent 时再按需打开
-                .disableSubagents()
+                .toolsConfig(YokeSubagents.toolsConfig())
                 .build();
     }
 

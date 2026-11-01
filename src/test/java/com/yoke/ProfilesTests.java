@@ -47,6 +47,14 @@ class ProfilesTests extends RedisIntegrationTest {
         assertThat(yamlValue("application-test.yml", "yoke.redis.uri")).isNull();
     }
 
+    @Test
+    void 向量化密钥在三个环境里的写法一致_都不会让缺失变成启动失败() throws IOException {
+        assertThat(yamlValue("application-local.yml", "yoke.knowledge.embedding.api-key")).isEqualTo("${YOKE_EMBEDDING_API_KEY:}");
+        assertThat(yamlValue("application-prod.yml", "yoke.knowledge.embedding.api-key")).isEqualTo("${YOKE_EMBEDDING_API_KEY:}");
+        // test 环境故意留空，保证测试不访问向量化服务
+        assertThat(yamlValue("application-test.yml", "yoke.knowledge.embedding.api-key")).isIn("", null);
+    }
+
     @Nested
     @SpringBootTest(properties = "OPENAI_API_KEY=sk-test")
     class 默认环境 {
@@ -75,6 +83,10 @@ class ProfilesTests extends RedisIntegrationTest {
             assertThat(environment.getProperty("logging.level.com.yoke")).isNull();
             assertThat(environment.getProperty("yoke.redis.uri")).startsWith("redis://");
             assertThat(environment.getProperty("yoke.redis.key-prefix")).isEqualTo("yoke:");
+            assertThat(environment.getProperty("logging.level.io.agentscope.harness.agent.tools.ToolFilter")).isEqualTo("ERROR");
+            // 测试环境不启用向量检索，也不接任何 MCP 服务
+            assertThat(environment.getProperty("yoke.knowledge.embedding.api-key", "")).isEmpty();
+            assertThat(environment.getProperty("yoke.mcp.servers[0].name")).isNull();
         }
     }
 

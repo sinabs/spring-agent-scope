@@ -1,5 +1,12 @@
 package com.yoke.config;
 
+import java.net.URI;
+import java.time.Duration;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.slf4j.Logger;
@@ -7,6 +14,7 @@ import org.slf4j.LoggerFactory;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
+import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 
 /**
@@ -15,13 +23,17 @@ import org.springframework.validation.annotation.Validated;
  * @param redis      Redis 连接与键前缀
  * @param compaction 对话压缩的触发与保留条数
  * @param workspace  HarnessAgent 的工作区目录，放压缩前转存的消息、记忆等本地文件
+ * @param knowledge  知识库检索（可选的向量化配置）
+ * @param mcp        要接入的外部 MCP 服务，默认一个也不接
  */
 @Validated
 @ConfigurationProperties(prefix = "yoke")
 public record YokeProperties(
         @Valid @DefaultValue Redis redis,
         @DefaultValue Compaction compaction,
-        @NotBlank String workspace) {
+        @NotBlank String workspace,
+        @Valid @DefaultValue Knowledge knowledge,
+        @Valid @DefaultValue Mcp mcp) {
 
     /**
      * Redis 配置。
@@ -66,6 +78,115 @@ public record YokeProperties(
                 triggerMessages = DEFAULT_TRIGGER_MESSAGES;
                 keepMessages = DEFAULT_KEEP_MESSAGES;
             }
+        }
+    }
+
+    /**
+     * 知识库检索配置。
+     *
+     * @param embedding 向量化服务；不配置时只用关键词检索
+     */
+    public record Knowledge(@DefaultValue Embedding embedding) {
+
+        /**
+         * 向量化服务（OpenAI 兼容的 {@code /embeddings} 接口），{@code modelName} 和 {@code apiKey} 都有值才启用。
+         *
+         * @param modelName  向量模型名，例如 text-embedding-3-small；为空表示不启用向量检索
+         * @param baseUrl    接口根地址，默认 OpenAI 官方；用 DashScope 等兼容服务时改它
+         * @param apiKey     密钥，只从环境变量或外部配置提供，不要写进仓库
+         * @param dimensions 向量维度，可选；不传用模型默认值
+         */
+        public record Embedding(
+                String modelName,
+                @DefaultValue("https://api.openai.com/v1") String baseUrl,
+                String apiKey,
+                Integer dimensions) {
+
+            public boolean enabled() {
+                return StringUtils.hasText(modelName) && StringUtils.hasText(apiKey);
+            }
+
+            /** 密钥不进日志和调试输出。 */
+            @Override
+            public String toString() {
+                return "Embedding[modelName=" + modelName + ", baseUrl=" + baseUrl + ", apiKey="
+                        + (StringUtils.hasText(apiKey) ? "***" : null) + ", dimensions=" + dimensions + "]";
+            }
+        }
+    }
+
+    /**
+     * 外部 MCP 服务配置。
+     *
+     * @param servers 要接入的服务列表，默认为空：不配置就不接任何 MCP，也不影响启动
+     */
+    public record Mcp(@DefaultValue List<@Valid McpServer> servers) {
+
+        public Mcp {
+            servers = servers == null ? List.of() : List.copyOf(servers);
+            long distinct = servers.stream().map(McpServer::name).distinct().count();
+            if (distinct != servers.size()) {
+                throw new IllegalArgumentException("yoke.mcp.servers 里的 name 不能重复：每个服务的工具靠它区分和释放");
+            }
+        }
+    }
+
+    /**
+     * 一个 MCP 服务。
+     *
+     * <p><b>只允许 HTTP 传输</b>（{@code sse} 或 {@code streamable-http}）。{@code stdio} 会让服务端按配置里的命令行
+     * 去启动本地进程：配置一旦被改动或被注入，就等于远程代码执行；多副本、容器里也没有可靠的进程管理。
+     * 所以填 {@code stdio} 或任何别的值，应用启动时就失败，而不是等到运行时。
+     *
+     * @param name      服务名，在列表里唯一，用于日志和释放
+     * @param transport 传输方式，{@code sse} 或 {@code streamable-http}
+     * @param url       服务地址
+     * @param timeout   单次请求超时，默认 30 秒
+     * @param headers   每个请求附带的 HTTP 头，通常放认证令牌；可选
+     */
+    public record McpServer(
+            @NotBlank String name,
+            @NotBlank String transport,
+            @NotBlank String url,
+            @DefaultValue("30s") Duration timeout,
+            @DefaultValue Map<String, String> headers) {
+
+        public static final String SSE = "sse";
+        public static final String STREAMABLE_HTTP = "streamable-http";
+        private static final Set<String> ALLOWED = Set.of(SSE, STREAMABLE_HTTP);
+
+        public McpServer {
+            String normalized = transport == null ? "" : transport.trim().toLowerCase(Locale.ROOT);
+            if (!ALLOWED.contains(normalized)) {
+                throw new IllegalArgumentException("yoke.mcp.servers[" + name + "].transport=" + transport
+                        + " 不被允许：运行态只支持 HTTP 传输（sse 或 streamable-http）。"
+                        + "stdio 会按配置启动本地进程，存在命令注入风险，所以被拒绝");
+            }
+            transport = normalized;
+            if (name == null || name.isBlank() || url == null || url.isBlank()) {
+                throw new IllegalArgumentException("yoke.mcp.servers 的 name 和 url 不能为空");
+            }
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                throw new IllegalArgumentException("yoke.mcp.servers[" + name + "].url 必须以 http:// 或 https:// 开头");
+            }
+            if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+                timeout = Duration.ofSeconds(30);
+            }
+            headers = headers == null ? Map.of() : Map.copyOf(headers);
+        }
+
+        /** 地址和请求头里可能带令牌：toString 只留协议、主机和端口，请求头只列名字。 */
+        @Override
+        public String toString() {
+            String origin;
+            try {
+                URI uri = URI.create(url);
+                origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+            } catch (IllegalArgumentException e) {
+                origin = "<invalid>";
+            }
+            return "McpServer[name=" + name + ", transport=" + transport + ", url=" + origin
+                    + ", timeout=" + timeout + ", headers=" + headers.keySet() + "]";
         }
     }
 }

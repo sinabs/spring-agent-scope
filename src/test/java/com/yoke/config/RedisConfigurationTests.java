@@ -8,7 +8,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RedisConfigurationTests {
 
     private static YokeProperties withUri(String uri) {
-        return new YokeProperties(new YokeProperties.Redis(uri, "yoke:"), new YokeProperties.Compaction(30, 10), "/tmp/yoke");
+        return new YokeProperties(new YokeProperties.Redis(uri, "yoke:"), new YokeProperties.Compaction(30, 10), "/tmp/yoke",
+                new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null)),
+                new YokeProperties.Mcp(java.util.List.of()));
     }
 
     private static String allMessages(Throwable error) {

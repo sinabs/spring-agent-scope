@@ -10,6 +10,10 @@ spring:
       enabled: true
 
 logging:
+  level:
+    # 主 Agent 同时用了 disableWebTools() 和 ToolsConfig.deny：web 工具没注册，ToolFilter 每次构建对 deny 里的名字打 WARN，
+    # 摘要子 Agent 的占位白名单名也一样。这些是预期内的噪音，调到 ERROR；配置写错的风险由 SubagentTests 守着
+    io.agentscope.harness.agent.tools.ToolFilter: ERROR
   pattern:
     console: "%red(%d{yyyy-MM-dd HH:mm:ss}) %green([%thread]) %highlight(%-5level) %green(%X{traceId:-},%X{spanId:-}) %boldMagenta(%logger{50}) - %cyan(%msg%n)"
 
@@ -23,6 +27,24 @@ yoke:
     # 对话消息达到 trigger-messages 条就压缩，压缩后原样保留最近 keep-messages 条；<=0 的非法值回落到 30 / 10
     trigger-messages: 30
     keep-messages: 10
+  knowledge:
+    # 知识库检索（retrieve 工具）：语料是 classpath:knowledge/*.md。
+    # embedding 的 model-name 和 api-key 都有值才启用向量检索（与关键词检索融合）；任意一个为空就只用关键词检索，
+    # 向量化服务出错时也会自动退回关键词。密钥见各环境文件，base-url 可换成其他 OpenAI 兼容服务
+    embedding:
+      model-name: ${YOKE_EMBEDDING_MODEL:}
+      base-url: ${YOKE_EMBEDDING_BASE_URL:https://api.openai.com/v1}
+  # 外部 MCP 服务，默认一个也不接。只允许 HTTP 传输（sse 或 streamable-http），配置 stdio 会让应用启动失败；
+  # 连不上也会启动失败。接入后服务端公布的工具以原名出现在模型的工具清单里；
+  # 只有服务端声明了 readOnlyHint 的工具会被注册，其余需要用户确认，而 HTTP 接口没有确认通道，所以不暴露给模型。示例：
+  # mcp:
+  #   servers:
+  #     - name: docs
+  #       transport: streamable-http
+  #       url: https://mcp.example.com/mcp
+  #       timeout: 30s
+  #       headers:
+  #         Authorization: Bearer ${MCP_DOCS_TOKEN}
 
 # Agent 与模型由 AgentScope 官方 starter 根据下面的配置自动创建
 # 这里只放各环境通用的配置，密钥和环境差异见 application-{profile}.yml
