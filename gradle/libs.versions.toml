@@ -1,6 +1,7 @@
 [versions]
 spring-boot = "4.1.2"
 agentscope = "2.0.4"
+archunit = "1.4.1"
 
 [libraries]
 spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
@@ -9,6 +10,7 @@ agentscope-starter = { module = "io.agentscope:agentscope-spring-boot-starter" }
 agentscope-openai-starter = { module = "io.agentscope:agentscope-openai-spring-boot-starter" }
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 lombok = { module = "org.projectlombok:lombok" }
+archunit = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }

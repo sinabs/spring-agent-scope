@@ -2,10 +2,15 @@ package com.yoke.controller;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +24,9 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -79,5 +87,37 @@ class ChatControllerWebTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reply").value("你好呀"))
                 .andExpect(jsonPath("$.sessionId").isNotEmpty());
+    }
+
+    @Test
+    void 流式接口缺少或空白的message时返回400() throws Exception {
+        for (String body : new String[] {"{}", "{\"message\":null}", "{\"message\":\"\"}", "{\"message\":\"  \"}"}) {
+            mvc.perform(post("/api/chat/stream").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    void 流式接口返回事件流且事件名正确() throws Exception {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(
+                new TextBlockDeltaEvent("r", "text", "你"),
+                new TextBlockDeltaEvent("r", "text", "好"),
+                new AgentResultEvent(new AssistantMessage("你好")),
+                new AgentEndEvent("r")));
+
+        var started = mvc.perform(post("/api/chat/stream").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sessionId\":\"s-1\",\"message\":\"你好\"}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        String body = mvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andReturn().getResponse().getContentAsString(UTF_8);
+
+        assertThat(body).containsSubsequence(
+                "event:textDelta", "data:{\"text\":\"你\"}",
+                "event:textDelta", "data:{\"text\":\"好\"}",
+                "event:done", "\"sessionId\":\"s-1\"", "\"text\":\"你好\"");
     }
 }

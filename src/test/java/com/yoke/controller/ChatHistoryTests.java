@@ -3,6 +3,7 @@ package com.yoke.controller;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import com.yoke.model.ChatEvent;
 import com.yoke.model.ChatRequest;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -17,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,11 +34,17 @@ class ChatHistoryTests {
     /** 记录每次收到的消息，并固定回复 ok。 */
     static class RecordingModel implements Model {
 
+        /** 输入里出现这个文字时模型抛错，用来走真实 Agent 的出错路径。 */
+        static final String FAIL_TRIGGER = "触发模型错误";
+
         final List<List<Msg>> received = new CopyOnWriteArrayList<>();
 
         @Override
         public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             received.add(List.copyOf(messages));
+            if (messages.stream().anyMatch(msg -> msg.getTextContent() != null && msg.getTextContent().contains(FAIL_TRIGGER))) {
+                return Flux.error(new IllegalStateException("模型服务不可用"));
+            }
             return Flux.just(ChatResponse.builder()
                     .content(List.of(TextBlock.builder().text("ok").build()))
                     .build());
@@ -76,5 +84,28 @@ class ChatHistoryTests {
 
         controller.chat(new ChatRequest("history-b", "另一个会话")).block();
         assertThat(lastCallContains("第一句话")).as("不同会话不应看到别人的历史").isFalse();
+    }
+
+    @Test
+    void 流式调用后同一会话的下一轮能看到上一轮内容() {
+        controller.stream(new ChatRequest("stream-a", "流式第一句")).blockLast();
+        controller.stream(new ChatRequest("stream-a", "流式第二句")).blockLast();
+        assertThat(lastCallContains("流式第一句")).as("流式的第二轮应能看到第一句").isTrue();
+
+        controller.chat(new ChatRequest("stream-a", "同步第三句")).block();
+        assertThat(lastCallContains("流式第二句")).as("同步与流式共用同一份历史").isTrue();
+
+        controller.stream(new ChatRequest("stream-b", "另一个会话")).blockLast();
+        assertThat(lastCallContains("流式第一句")).as("不同会话不应看到别人的历史").isFalse();
+    }
+
+    @Test
+    void 模型抛错时真实Agent的流以error事件收尾且没有done() {
+        List<ServerSentEvent<ChatEvent>> events = controller
+                .stream(new ChatRequest("stream-err", RecordingModel.FAIL_TRIGGER)).collectList().block();
+
+        assertThat(events).extracting(ServerSentEvent::event).doesNotContain("done");
+        assertThat(events.getLast().event()).isEqualTo("error");
+        assertThat(events.getLast().data()).isEqualTo(new ChatEvent.Error("模型服务不可用"));
     }
 }
