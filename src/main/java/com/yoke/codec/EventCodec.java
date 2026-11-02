@@ -3,6 +3,7 @@ package com.yoke.codec;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import cn.hutool.core.util.StrUtil;
 import com.yoke.model.ChatEvent;
@@ -88,9 +89,9 @@ public final class EventCodec {
             case ToolResultEndEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
                 StringBuilder output = toolOutputs.remove(e.getToolCallId());
-                String state = e.getState() == null ? "success" : e.getState().getValue();
+                String state = Objects.isNull(e.getState()) ? "success" : e.getState().getValue();
                 yield List.of(new ChatEvent.ToolResult(e.getToolCallId(), nameOf(e.getToolCallId()), state,
-                        output == null ? "" : output.toString()));
+                        Objects.isNull(output) ? "" : output.toString()));
             }
             case HintBlockEvent e -> List.of(new ChatEvent.Hint(e.getHintSource(), e.getHint()));
             case ModelCallEndEvent e -> {
@@ -98,8 +99,8 @@ public final class EventCodec {
                 yield List.of();
             }
             case AgentResultEvent e -> {
-                String text = e.getResult() == null ? null : MessageCodec.toText(e.getResult());
-                replyText = text == null ? "" : text;
+                String text = Objects.isNull(e.getResult()) ? null : MessageCodec.toText(e.getResult());
+                replyText = Objects.isNull(text) ? "" : text;
                 yield List.of();
             }
             case AgentEndEvent ignored -> List.of(new ChatEvent.Done(sessionId, replyText,
@@ -119,7 +120,7 @@ public final class EventCodec {
     }
 
     private void accumulate(ChatUsage usage) {
-        if (usage != null) {
+        if (Objects.nonNull(usage)) {
             inputTokens += usage.getInputTokens();
             outputTokens += usage.getOutputTokens();
         }

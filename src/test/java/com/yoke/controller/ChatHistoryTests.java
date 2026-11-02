@@ -1,6 +1,7 @@
 package com.yoke.controller;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.yoke.model.ChatEvent;
@@ -42,7 +43,7 @@ class ChatHistoryTests {
         @Override
         public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             received.add(List.copyOf(messages));
-            if (messages.stream().anyMatch(msg -> msg.getTextContent() != null && msg.getTextContent().contains(FAIL_TRIGGER))) {
+            if (messages.stream().anyMatch(msg -> Objects.nonNull(msg.getTextContent()) && msg.getTextContent().contains(FAIL_TRIGGER))) {
                 return Flux.error(new IllegalStateException("模型服务不可用"));
             }
             return Flux.just(ChatResponse.builder()
@@ -73,7 +74,7 @@ class ChatHistoryTests {
 
     private boolean lastCallContains(String text) {
         List<Msg> last = model.received.getLast();
-        return last.stream().anyMatch(msg -> msg.getTextContent() != null && msg.getTextContent().contains(text));
+        return last.stream().anyMatch(msg -> Objects.nonNull(msg.getTextContent()) && msg.getTextContent().contains(text));
     }
 
     @Test
