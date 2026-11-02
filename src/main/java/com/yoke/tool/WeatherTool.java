@@ -1,6 +1,7 @@
 package com.yoke.tool;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -37,8 +38,12 @@ public class WeatherTool {
 
     private static final int MAX_CITY_LENGTH = 64;
 
-    /** 上游响应体的大小上限，正常响应只有几百字节，超过说明不对劲。 */
-    private static final int MAX_BODY_LENGTH = 64 * 1024;
+    /** 上游响应体的大小上限（字节），正常响应只有几百字节，超过说明不对劲。读取时就限长，不会先整个读进内存。 */
+    private static final int MAX_BODY_BYTES = 64 * 1024;
+
+    /** 当前天气里必须是数字的字段，缺了就不能当真实数据展示。 */
+    private static final String[] REQUIRED_CURRENT_FIELDS = {
+            "temperature_2m", "apparent_temperature", "relative_humidity_2m", "weather_code", "wind_speed_10m"};
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
 
@@ -100,31 +105,50 @@ public class WeatherTool {
         JsonNode body = get(geocodingUrl + "?name=" + URLEncoder.encode(name, StandardCharsets.UTF_8)
                 + "&count=1&language=zh&format=json");
         JsonNode first = body.path("results").path(0);
-        return first.isMissingNode() ? null : first;
+        if (first.isMissingNode()) {
+            return null;
+        }
+        requireNumbers(first, "latitude", "longitude");
+        return first;
     }
 
     private JsonNode fetchCurrent(JsonNode place) throws IOException, InterruptedException {
-        JsonNode body = get(forecastUrl + "?latitude=" + place.path("latitude").asDouble()
-                + "&longitude=" + place.path("longitude").asDouble()
+        // 用 toPlainString，避免很小的经纬度被拼成 1.0E-4 这种科学计数法
+        JsonNode body = get(forecastUrl + "?latitude=" + place.path("latitude").decimalValue().toPlainString()
+                + "&longitude=" + place.path("longitude").decimalValue().toPlainString()
                 + "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m"
                 + "&timezone=auto");
         JsonNode current = body.path("current");
         if (current.isMissingNode()) {
             throw new IOException("上游响应缺少 current 字段");
         }
+        requireNumbers(current, REQUIRED_CURRENT_FIELDS);
         return current;
+    }
+
+    /** 必须字段缺失或不是数字时抛异常，免得把缺省的 0 当成真实读数告诉用户。 */
+    private static void requireNumbers(JsonNode node, String... fields) throws IOException {
+        for (String field : fields) {
+            if (!node.path(field).isNumber()) {
+                throw new IOException("上游响应缺少数字字段 " + field);
+            }
+        }
     }
 
     private JsonNode get(String url) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(REQUEST_TIMEOUT).GET().build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            throw new IOException("上游返回状态码 " + response.statusCode());
+        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        // 关闭流会中断剩下的响应体，所以超限时不会继续往下读
+        try (InputStream in = response.body()) {
+            if (response.statusCode() != 200) {
+                throw new IOException("上游返回状态码 " + response.statusCode());
+            }
+            byte[] bytes = in.readNBytes(MAX_BODY_BYTES + 1);
+            if (bytes.length > MAX_BODY_BYTES) {
+                throw new IOException("上游响应过大");
+            }
+            return mapper.readTree(bytes);
         }
-        if (response.body().length() > MAX_BODY_LENGTH) {
-            throw new IOException("上游响应过大");
-        }
-        return mapper.readTree(response.body());
     }
 
     private static String describe(JsonNode place, JsonNode current) {
