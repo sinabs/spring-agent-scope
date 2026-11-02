@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import cn.hutool.core.util.StrUtil;
 import com.yoke.model.ChatEvent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -71,7 +72,7 @@ public final class EventCodec {
             case ToolCallEndEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
                 StringBuilder arguments = toolArguments.remove(e.getToolCallId());
-                String json = arguments == null || arguments.toString().isBlank() ? "{}" : arguments.toString();
+                String json = StrUtil.isBlank(arguments) ? "{}" : arguments.toString();
                 yield List.of(new ChatEvent.ToolCall(e.getToolCallId(), nameOf(e.getToolCallId()), json));
             }
             case ToolResultStartEvent e -> {
@@ -108,7 +109,7 @@ public final class EventCodec {
     }
 
     private void rememberName(String toolCallId, String name) {
-        if (name != null && !name.isBlank()) {
+        if (StrUtil.isNotBlank(name)) {
             toolNames.put(toolCallId, name);
         }
     }
