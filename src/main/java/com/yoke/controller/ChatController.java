@@ -3,6 +3,7 @@ package com.yoke.controller;
 import java.util.Optional;
 import java.util.UUID;
 
+import cn.hutool.core.util.StrUtil;
 import com.yoke.api.ChatApi;
 import com.yoke.codec.EventCodec;
 import com.yoke.codec.MessageCodec;
@@ -18,7 +19,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
@@ -64,13 +64,13 @@ public class ChatController implements ChatApi {
 
     private static String resolveSessionId(ChatRequest request) {
         return Optional.ofNullable(request.sessionId())
-                .filter(StringUtils::hasText)
+                .filter(StrUtil::isNotBlank)
                 .orElseGet(() -> UUID.randomUUID().toString());
     }
 
     private static String resolveUserId(ChatRequest request) {
         return Optional.ofNullable(request.userId())
-                .filter(StringUtils::hasText)
+                .filter(StrUtil::isNotBlank)
                 .orElse(DEFAULT_USER_ID);
     }
 
@@ -82,6 +82,8 @@ public class ChatController implements ChatApi {
     }
 
     private static String describe(Throwable error) {
-        return StringUtils.hasText(error.getMessage()) ? error.getMessage() : error.getClass().getSimpleName();
+        return Optional.ofNullable(error.getMessage())
+                .filter(StrUtil::isNotBlank)
+                .orElseGet(() -> error.getClass().getSimpleName());
     }
 }

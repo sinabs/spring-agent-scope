@@ -5,6 +5,7 @@ import java.util.List;
 
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -25,6 +26,7 @@ public class HarnessAgentFactory {
     private final String sysPrompt;
     private final int maxIters;
     private final Model model;
+    private final Toolkit toolkit;
     private final DistributedStore distributedStore;
     private final Path workspace;
     private final YokeProperties.Compaction compaction;
@@ -36,6 +38,8 @@ public class HarnessAgentFactory {
                 .sysPrompt(sysPrompt)
                 .maxIters(maxIters)
                 .model(model)
+                // 共享的 Toolkit 只放自定义工具（目前是天气），内置工具由下面的 disable* 开关决定
+                .toolkit(toolkit)
                 .workspace(workspace)
                 // 会话状态由它提供：没有显式 stateStore 时，Harness 用 distributedStore 的 AgentStateStore
                 .distributedStore(distributedStore)

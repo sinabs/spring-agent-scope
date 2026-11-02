@@ -77,7 +77,7 @@ class EventCodecTests {
 
         assertThat(events).containsExactly(
                 new ChatEvent.ToolCall("c1", "get_weather", "{}"),
-                new ChatEvent.ToolResult("c1", "get_weather", "success", "晴"));
+                new ChatEvent.ToolResult("c1", "get_weather", ToolResultState.SUCCESS.getValue(), "晴"));
     }
 
     @Test
@@ -112,7 +112,7 @@ class EventCodecTests {
                 new ToolResultTextDeltaEvent("r", "c1", "f", "错"),
                 new ToolResultEndEvent("r", "c1", "f", ToolResultState.ERROR));
 
-        assertThat(events).containsExactly(new ChatEvent.ToolResult("c1", "f", "error", "出错"));
+        assertThat(events).containsExactly(new ChatEvent.ToolResult("c1", "f", ToolResultState.ERROR.getValue(), "出错"));
     }
 
     @Test
@@ -154,7 +154,7 @@ class EventCodecTests {
     void 事件名与事件类型一一对应() {
         assertThat(new ChatEvent.TextDelta("a").eventName()).isEqualTo("textDelta");
         assertThat(new ChatEvent.ToolCall("1", "n", "{}").eventName()).isEqualTo("toolCall");
-        assertThat(new ChatEvent.ToolResult("1", "n", "success", "").eventName()).isEqualTo("toolResult");
+        assertThat(new ChatEvent.ToolResult("1", "n", ToolResultState.SUCCESS.getValue(), "").eventName()).isEqualTo("toolResult");
         assertThat(new ChatEvent.Hint("s", "t").eventName()).isEqualTo("hint");
         assertThat(new ChatEvent.Done("s", "t", new ChatEvent.Usage(0, 0, 0)).eventName()).isEqualTo("done");
         assertThat(new ChatEvent.Error("m").eventName()).isEqualTo("error");

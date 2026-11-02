@@ -84,7 +84,7 @@ class YokePropertiesTests {
     @Test
     void 只按条数触发压缩且token阈值不会先触发() {
         HarnessAgentFactory factory = new HarnessAgentFactory(
-                "Yoke", "prompt", 10, null, null, null, new YokeProperties.Compaction(30, 10), List.of());
+                "Yoke", "prompt", 10, null, null, null, null, new YokeProperties.Compaction(30, 10), List.of());
 
         CompactionConfig config = factory.compactionConfig();
 

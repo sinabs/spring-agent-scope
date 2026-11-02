@@ -3,7 +3,10 @@ package com.yoke.codec;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
+import cn.hutool.core.util.StrUtil;
 import com.yoke.model.ChatEvent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -17,6 +20,7 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatUsage;
 
 /**
@@ -65,13 +69,16 @@ public final class EventCodec {
             }
             case ToolCallDeltaEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
-                toolArguments.computeIfAbsent(e.getToolCallId(), id -> new StringBuilder()).append(e.getDelta());
+                toolArguments.computeIfAbsent(e.getToolCallId(), _ -> new StringBuilder()).append(e.getDelta());
                 yield List.of();
             }
             case ToolCallEndEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
                 StringBuilder arguments = toolArguments.remove(e.getToolCallId());
-                String json = arguments == null || arguments.toString().isBlank() ? "{}" : arguments.toString();
+                String json = Optional.ofNullable(arguments)
+                        .map(StringBuilder::toString)
+                        .filter(StrUtil::isNotBlank)
+                        .orElse("{}");
                 yield List.of(new ChatEvent.ToolCall(e.getToolCallId(), nameOf(e.getToolCallId()), json));
             }
             case ToolResultStartEvent e -> {
@@ -81,15 +88,15 @@ public final class EventCodec {
             }
             case ToolResultTextDeltaEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
-                toolOutputs.computeIfAbsent(e.getToolCallId(), id -> new StringBuilder()).append(e.getDelta());
+                toolOutputs.computeIfAbsent(e.getToolCallId(), _ -> new StringBuilder()).append(e.getDelta());
                 yield List.of();
             }
             case ToolResultEndEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
                 StringBuilder output = toolOutputs.remove(e.getToolCallId());
-                String state = e.getState() == null ? "success" : e.getState().getValue();
+                String state = Optional.ofNullable(e.getState()).map(ToolResultState::getValue).orElse(ToolResultState.SUCCESS.getValue());
                 yield List.of(new ChatEvent.ToolResult(e.getToolCallId(), nameOf(e.getToolCallId()), state,
-                        output == null ? "" : output.toString()));
+                        Optional.ofNullable(output).map(StringBuilder::toString).orElse("")));
             }
             case HintBlockEvent e -> List.of(new ChatEvent.Hint(e.getHintSource(), e.getHint()));
             case ModelCallEndEvent e -> {
@@ -97,8 +104,7 @@ public final class EventCodec {
                 yield List.of();
             }
             case AgentResultEvent e -> {
-                String text = e.getResult() == null ? null : MessageCodec.toText(e.getResult());
-                replyText = text == null ? "" : text;
+                replyText = Optional.ofNullable(e.getResult()).map(MessageCodec::toText).orElse("");
                 yield List.of();
             }
             case AgentEndEvent ignored -> List.of(new ChatEvent.Done(sessionId, replyText,
@@ -108,7 +114,7 @@ public final class EventCodec {
     }
 
     private void rememberName(String toolCallId, String name) {
-        if (name != null && !name.isBlank()) {
+        if (StrUtil.isNotBlank(name)) {
             toolNames.put(toolCallId, name);
         }
     }
@@ -118,7 +124,7 @@ public final class EventCodec {
     }
 
     private void accumulate(ChatUsage usage) {
-        if (usage != null) {
+        if (Objects.nonNull(usage)) {
             inputTokens += usage.getInputTokens();
             outputTokens += usage.getOutputTokens();
         }

@@ -20,8 +20,9 @@
 Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke 则是套在模型外面、让它能稳定干活的那层运行框架。它把 AgentScope 的 Agent 能力包装成一个开箱即用的 HTTP 服务，让你专注于业务，而不是胶水代码：
 
 - 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，通过 SSE 边推理边推送。
+- 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 接口查询当前天气（无需密钥，免费版仅限非商业使用）。
 - 每次请求新建临时 `HarnessAgent`，用完即关闭；对话历史保存在 Redis 里，重启不丢、多副本共享，按 `(userId, sessionId)` 隔离，对话过长时自动压缩。
-- Agent 不开放文件、命令和联网工具，子 Agent 整体关闭，日志中间件为每次调用记录耗时轨迹。
+- 除 `get_weather` 外 Agent 没有其他工具：不开放文件、命令和联网，子 Agent 整体关闭；日志中间件为每次调用记录耗时轨迹。
 - 通过 AgentScope 官方 starter 接入各种模型：OpenAI 兼容协议（可对接 DashScope、DeepSeek 等）、Anthropic、Gemini、Ollama，换依赖和配置即可。
 - local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
 - 默认开启虚拟线程，Tomcat 和 Spring 默认线程池都使用虚拟线程。
@@ -34,7 +35,7 @@ Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke �
 ```bash
 docker compose up -d            # 先启动 Redis；没有 Redis 应用无法启动
 sdk env                         # 切换到 JDK 25（使用 sdkman 时）
-export OPENAI_API_KEY=sk-...
+export ARK_API_KEY=...          # local 环境接火山方舟（OpenAI 兼容协议）
 ./gradlew bootRun               # 默认激活 local 环境
 ```
 
@@ -109,7 +110,7 @@ data:{"sessionId":"demo","text":"北京今天晴，25 度。","usage":{"inputTok
 配置按环境拆分，没有显式指定环境时默认激活 `local`；部署时用环境变量 `SPRING_PROFILES_ACTIVE=prod` 或命令行参数 `--spring.profiles.active=prod` 切换。
 
 - `application.yml`：各环境通用：模型、Agent、虚拟线程、日志格式、工作区、键前缀和压缩配置
-- `application-local.yml`：本地开发：密钥读环境变量（可为空），Redis 连 `redis://127.0.0.1:6379`（即 `docker-compose.yml` 里的那个），`com.yoke` 日志为 debug
+- `application-local.yml`：本地开发：火山方舟的 `base-url` 与模型名写在文件里，密钥读环境变量 `ARK_API_KEY`（可为空），Redis 连 `redis://127.0.0.1:6379`（即 `docker-compose.yml` 里的那个），`com.yoke` 日志为 debug
 - `application-test.yml`：自动化测试：假密钥，不会真正调用模型；Redis 地址由测试注入
 - `application-prod.yml`：生产：密钥和 Redis 地址（`YOKE_REDIS_URI`）必须由环境变量提供，缺失则启动失败；优雅停机
 
@@ -117,7 +118,7 @@ data:{"sessionId":"demo","text":"北京今天晴，25 度。","usage":{"inputTok
 
 | 配置 | 说明 |
 |---|---|
-| `agentscope.openai.api-key` | 模型密钥，来自环境变量 `OPENAI_API_KEY` |
+| `agentscope.openai.api-key` | 模型密钥；`local` 读 `ARK_API_KEY`，`prod` 读 `OPENAI_API_KEY` |
 | `agentscope.openai.model-name` | 模型名称 |
 | `agentscope.openai.base-url` | 接入其他 OpenAI 兼容服务（DashScope、DeepSeek 等）时设置 |
 | `agentscope.agent.sys-prompt` | 系统提示词 |

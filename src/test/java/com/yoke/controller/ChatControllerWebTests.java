@@ -29,7 +29,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsStringIgnoringCase;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -172,5 +174,22 @@ class ChatControllerWebTests {
                 "event:textDelta", "data:{\"text\":\"你\"}",
                 "event:textDelta", "data:{\"text\":\"好\"}",
                 "event:done", "\"sessionId\":\"s-1\"", "\"text\":\"你好\"");
+    }
+
+    @Test
+    void 流式接口的响应类型带UTF8字符集() throws Exception {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(
+                new AgentResultEvent(new AssistantMessage("你好")),
+                new AgentEndEvent("r")));
+
+        var started = mvc.perform(post("/api/chat/stream").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sessionId\":\"s-1\",\"message\":\"你好\"}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        // 没有 charset 时 IDEA 的 HTTP Client 会按 ISO-8859-1 解码，中文显示成乱码
+        mvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", containsStringIgnoringCase("charset=UTF-8")));
     }
 }

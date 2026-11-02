@@ -20,8 +20,9 @@
 A yoke is the wooden frame that makes oxen and horses pull in the direction you want. Yoke does the same for models: it is the runtime layer wrapped around a model so it can do real work reliably. It turns AgentScope's agent capabilities into a ready-to-use HTTP service, so you can focus on your business logic instead of glue code:
 
 - One endpoint for multi-turn conversations: `POST /api/chat`, plus `POST /api/chat/stream` that streams the reasoning process over SSE.
+- A built-in `get_weather` tool queries current weather through the open-source [Open-Meteo](https://open-meteo.com) API (no key needed; its free tier is for non-commercial use only).
 - A temporary `HarnessAgent` is built for every request and closed afterwards; conversation history lives in Redis, so it survives restarts and is shared by all replicas. History is isolated per `(userId, sessionId)`, and long conversations are compacted automatically.
-- The agent has no file, shell or web tools and sub-agents are switched off, and a logging middleware records a timing trace for every call.
+- Apart from `get_weather`, the agent has no tools: no file, shell or web access, and sub-agents are switched off. A logging middleware records a timing trace for every call.
 - Models are plugged in through the official AgentScope starters: OpenAI-compatible APIs (works with DashScope, DeepSeek and others), Anthropic, Gemini and Ollama. Switching is a dependency and configuration change.
 - `local` / `test` / `prod` profiles. In production, a missing API key fails the startup instead of shipping with an empty key.
 - Virtual threads are enabled by default, for both Tomcat and Spring's default thread pool.
@@ -34,7 +35,7 @@ Requires JDK 25 and Docker (for the local Redis).
 ```bash
 docker compose up -d            # start Redis first; the app refuses to start without it
 sdk env                         # switch to JDK 25 (if you use sdkman)
-export OPENAI_API_KEY=sk-...
+export ARK_API_KEY=...          # the local profile talks to Volcengine Ark (OpenAI-compatible)
 ./gradlew bootRun               # the local profile is active by default
 ```
 
@@ -106,7 +107,7 @@ Every stream ends with either `done` or `error`. A blank `message` returns 400 b
 Configuration is split by profile. The `local` profile is active when none is specified; switch with the `SPRING_PROFILES_ACTIVE=prod` environment variable or the `--spring.profiles.active=prod` command-line argument.
 
 - `application.yml`: Shared by all profiles: model, agent, virtual threads, log format, workspace, key prefix and compaction
-- `application-local.yml`: Local development: API key from the environment (may be empty), Redis at `redis://127.0.0.1:6379` (the one from `docker-compose.yml`), `com.yoke` logs at debug
+- `application-local.yml`: Local development: Volcengine Ark `base-url` and model name live in the file, the API key comes from `ARK_API_KEY` (may be empty), Redis at `redis://127.0.0.1:6379` (the one from `docker-compose.yml`), `com.yoke` logs at debug
 - `application-test.yml`: Automated tests: a fake API key, the model is never really called; the Redis address is injected by the tests
 - `application-prod.yml`: Production: the API key and the Redis address (`YOKE_REDIS_URI`) must come from the environment, startup fails without them; graceful shutdown
 
@@ -114,7 +115,7 @@ The model is created by the official AgentScope starter from `agentscope.*`, and
 
 | Property | Description |
 |---|---|
-| `agentscope.openai.api-key` | Model API key, taken from the `OPENAI_API_KEY` environment variable |
+| `agentscope.openai.api-key` | Model API key; `local` reads `ARK_API_KEY`, `prod` reads `OPENAI_API_KEY` |
 | `agentscope.openai.model-name` | Model name |
 | `agentscope.openai.base-url` | Set this to use another OpenAI-compatible service (DashScope, DeepSeek, ...) |
 | `agentscope.agent.sys-prompt` | System prompt |

@@ -1,0 +1,64 @@
+### 第 01 课第八节的请求汇总，在 IDEA 里点每个请求左边的绿色三角即可运行。
+### 使用前：export ARK_API_KEY=... 后 ./gradlew bootRun（默认激活 local 环境，端口 8080）。
+### 想换地址或会话，改下面两个变量；换一个新的会话 ID 就等于清空历史。
+@host = http://localhost:8080
+@session = demo-01
+
+### 1. 流式：模型边想边说，依次收到 textDelta，最后是 done（带完整回复和 token 用量）
+POST {{host}}/api/chat/stream
+Content-Type: application/json
+
+{
+  "sessionId": "{{session}}",
+  "message": "用一句话介绍一下你自己"
+}
+
+### 2. 同步：同一个会话续聊，模型应该记得上一轮说过什么（先运行第 1 个请求）
+POST {{host}}/api/chat
+Content-Type: application/json
+
+{
+  "sessionId": "{{session}}",
+  "message": "我刚才让你做了什么？"
+}
+
+### 3. 空白 message：校验在进入控制器之前拦下，期望 400，不会调用模型
+POST {{host}}/api/chat/stream
+Content-Type: application/json
+
+{
+  "message": " "
+}
+
+### 4. 流式 + 天气工具：模型会调用 get_weather（真实访问 Open-Meteo，需要能上外网）
+### 先收到 toolCall、toolResult，再收到回复文本和 done
+POST {{host}}/api/chat/stream
+Content-Type: application/json
+
+{
+  "sessionId": "{{session}}-weather",
+  "message": "北京现在天气怎么样？要带伞吗？"
+}
+
+### 5. 同步 + 天气工具：只能拿到最终回复，看不到中间过程
+POST {{host}}/api/chat
+Content-Type: application/json
+
+{
+  "sessionId": "{{session}}-weather-sync",
+  "message": "上海现在多少度？"
+}
+
+### 6. 工具失败的路径：城市不存在时工具返回提示语，模型据此如实回答
+### 注意 toolResult 的 state 仍然是 success，框架眼里工具正常返回了字符串
+POST {{host}}/api/chat/stream
+Content-Type: application/json
+
+{
+  "sessionId": "{{session}}-notfound",
+  "message": "查一下 Zxqvbnmlkj 这个城市的天气"
+}
+
+### 模型出错（流式是 200 加 error 事件，同步是 500）没有放进来：要触发它得把模型名改错再重启，例如
+###   AGENTSCOPE_OPENAI_MODEL_NAME=no-such-model ./gradlew bootRun
+### 然后重新运行第 1 个和第 2 个请求，对比两个接口的区别。

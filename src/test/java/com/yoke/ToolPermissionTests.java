@@ -80,4 +80,17 @@ class ToolPermissionTests extends RedisIntegrationTest {
         // 框架以后新增了别的文件类工具时，这里会提醒我们把它也关掉
         assertThat(removed).isEqualTo(FORBIDDEN);
     }
+
+    @Test
+    void 模型能看到天气工具且每次新建的Agent都带着它() {
+        // 连发两次：每个请求新建一个 Agent，共享的 Toolkit 重复使用也不能丢工具或重复注册
+        for (int i = 0; i < 2; i++) {
+            model.receivedTools.clear();
+            controller.chat(new ChatRequest("weather-" + UUID.randomUUID(), "你有哪些工具")).block();
+
+            Set<String> exposed = model.receivedTools.stream().filter(tools -> !tools.isEmpty())
+                    .reduce((first, second) -> second).map(TreeSet::new).orElseThrow();
+            assertThat(exposed).contains("get_weather");
+        }
+    }
 }

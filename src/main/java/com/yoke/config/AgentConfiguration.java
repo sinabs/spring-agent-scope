@@ -1,8 +1,10 @@
 package com.yoke.config;
 
 import java.nio.file.Path;
+import com.yoke.tool.WeatherTool;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
@@ -24,19 +26,29 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class AgentConfiguration {
 
+    /** 工具类被所有请求共享，必须无请求态字段。 */
+    @Bean
+    public WeatherTool weatherTool() {
+        return new WeatherTool();
+    }
+
     @Bean
     public HarnessAgentFactory harnessAgentFactory(
             Model model,
             DistributedStore distributedStore,
             AgentscopeProperties properties,
             YokeProperties yoke,
+            WeatherTool weatherTool,
             ObjectProvider<MiddlewareBase> middlewares) {
         AgentProperties agent = properties.getAgent();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(weatherTool);
         return new HarnessAgentFactory(
                 agent.getName(),
                 agent.getSysPrompt(),
                 agent.getMaxIters(),
                 model,
+                toolkit,
                 distributedStore,
                 Path.of(yoke.workspace()),
                 yoke.compaction(),
