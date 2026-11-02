@@ -73,6 +73,8 @@ public class ChatController implements ChatApi {
     }
 
     private static String describe(Throwable error) {
-        return StrUtil.isNotBlank(error.getMessage()) ? error.getMessage() : error.getClass().getSimpleName();
+        return Optional.ofNullable(error.getMessage())
+                .filter(StrUtil::isNotBlank)
+                .orElseGet(() -> error.getClass().getSimpleName());
     }
 }

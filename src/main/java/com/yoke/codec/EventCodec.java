@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import cn.hutool.core.util.StrUtil;
 import com.yoke.model.ChatEvent;
@@ -73,7 +74,10 @@ public final class EventCodec {
             case ToolCallEndEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
                 StringBuilder arguments = toolArguments.remove(e.getToolCallId());
-                String json = StrUtil.isBlank(arguments) ? "{}" : arguments.toString();
+                String json = Optional.ofNullable(arguments)
+                        .map(StringBuilder::toString)
+                        .filter(StrUtil::isNotBlank)
+                        .orElse("{}");
                 yield List.of(new ChatEvent.ToolCall(e.getToolCallId(), nameOf(e.getToolCallId()), json));
             }
             case ToolResultStartEvent e -> {
@@ -89,9 +93,9 @@ public final class EventCodec {
             case ToolResultEndEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
                 StringBuilder output = toolOutputs.remove(e.getToolCallId());
-                String state = Objects.isNull(e.getState()) ? "success" : e.getState().getValue();
+                String state = Optional.ofNullable(e.getState()).map(resultState -> resultState.getValue()).orElse("success");
                 yield List.of(new ChatEvent.ToolResult(e.getToolCallId(), nameOf(e.getToolCallId()), state,
-                        Objects.isNull(output) ? "" : output.toString()));
+                        Optional.ofNullable(output).map(StringBuilder::toString).orElse("")));
             }
             case HintBlockEvent e -> List.of(new ChatEvent.Hint(e.getHintSource(), e.getHint()));
             case ModelCallEndEvent e -> {
@@ -99,8 +103,7 @@ public final class EventCodec {
                 yield List.of();
             }
             case AgentResultEvent e -> {
-                String text = Objects.isNull(e.getResult()) ? null : MessageCodec.toText(e.getResult());
-                replyText = Objects.isNull(text) ? "" : text;
+                replyText = Optional.ofNullable(e.getResult()).map(MessageCodec::toText).orElse("");
                 yield List.of();
             }
             case AgentEndEvent ignored -> List.of(new ChatEvent.Done(sessionId, replyText,
