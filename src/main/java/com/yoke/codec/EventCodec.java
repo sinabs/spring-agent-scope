@@ -20,6 +20,7 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatUsage;
 
 /**
@@ -68,7 +69,7 @@ public final class EventCodec {
             }
             case ToolCallDeltaEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
-                toolArguments.computeIfAbsent(e.getToolCallId(), id -> new StringBuilder()).append(e.getDelta());
+                toolArguments.computeIfAbsent(e.getToolCallId(), _ -> new StringBuilder()).append(e.getDelta());
                 yield List.of();
             }
             case ToolCallEndEvent e -> {
@@ -87,13 +88,13 @@ public final class EventCodec {
             }
             case ToolResultTextDeltaEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
-                toolOutputs.computeIfAbsent(e.getToolCallId(), id -> new StringBuilder()).append(e.getDelta());
+                toolOutputs.computeIfAbsent(e.getToolCallId(), _ -> new StringBuilder()).append(e.getDelta());
                 yield List.of();
             }
             case ToolResultEndEvent e -> {
                 rememberName(e.getToolCallId(), e.getToolCallName());
                 StringBuilder output = toolOutputs.remove(e.getToolCallId());
-                String state = Optional.ofNullable(e.getState()).map(resultState -> resultState.getValue()).orElse("success");
+                String state = Optional.ofNullable(e.getState()).map(ToolResultState::getValue).orElse(ToolResultState.SUCCESS.getValue());
                 yield List.of(new ChatEvent.ToolResult(e.getToolCallId(), nameOf(e.getToolCallId()), state,
                         Optional.ofNullable(output).map(StringBuilder::toString).orElse("")));
             }
