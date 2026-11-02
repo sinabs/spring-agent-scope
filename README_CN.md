@@ -20,6 +20,7 @@
 Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke 则是套在模型外面、让它能稳定干活的那层运行框架。它把 AgentScope 的 Agent 能力包装成一个开箱即用的 HTTP 服务，让你专注于业务，而不是胶水代码：
 
 - 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，通过 SSE 边推理边推送。
+- 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 接口查询当前天气（无需密钥，免费版仅限非商业使用）。
 - 每次请求新建临时 Agent，用完即关闭；对话历史保存在共享的状态存储里，按会话隔离。
 - 通过 AgentScope 官方 starter 接入各种模型：OpenAI 兼容协议（可对接 DashScope、DeepSeek 等）、Anthropic、Gemini、Ollama，换依赖和配置即可。
 - local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。

@@ -1,9 +1,11 @@
 package com.yoke.config;
 
+import com.yoke.tool.WeatherTool;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 
@@ -33,18 +35,29 @@ public class AgentConfiguration {
         return new InMemoryAgentStateStore();
     }
 
+    /** 工具类被所有请求共享，必须无请求态字段。 */
+    @Bean
+    public WeatherTool weatherTool() {
+        return new WeatherTool();
+    }
+
     /**
      * 共享的 Agent Builder，在启动时配置完成，请求期间只负责 {@code build()}。
      * 用户、会话等每次请求不同的信息通过 RuntimeContext 传入，不会修改这个 Builder。
      */
     @Bean
-    public ReActAgent.Builder agentBuilder(Model model, AgentStateStore stateStore, AgentscopeProperties properties) {
+    public ReActAgent.Builder agentBuilder(Model model, AgentStateStore stateStore, AgentscopeProperties properties,
+            WeatherTool weatherTool) {
         AgentProperties agent = properties.getAgent();
+        // build() 时框架会复制一份 Toolkit，复制品共享同一个工具实例
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(weatherTool);
         return ReActAgent.builder()
                 .name(agent.getName())
                 .sysPrompt(agent.getSysPrompt())
                 .maxIters(agent.getMaxIters())
                 .model(model)
+                .toolkit(toolkit)
                 .stateStore(stateStore);
     }
 }

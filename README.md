@@ -20,6 +20,7 @@
 A yoke is the wooden frame that makes oxen and horses pull in the direction you want. Yoke does the same for models: it is the runtime layer wrapped around a model so it can do real work reliably. It turns AgentScope's agent capabilities into a ready-to-use HTTP service, so you can focus on your business logic instead of glue code:
 
 - One endpoint for multi-turn conversations: `POST /api/chat`, plus `POST /api/chat/stream` that streams the reasoning process over SSE.
+- A built-in `get_weather` tool queries current weather through the open-source [Open-Meteo](https://open-meteo.com) API (no key needed; its free tier is for non-commercial use only).
 - A temporary agent is built for every request and closed afterwards; conversation history lives in a shared state store and is isolated per session.
 - Models are plugged in through the official AgentScope starters: OpenAI-compatible APIs (works with DashScope, DeepSeek and others), Anthropic, Gemini and Ollama. Switching is a dependency and configuration change.
 - `local` / `test` / `prod` profiles. In production, a missing API key fails the startup instead of shipping with an empty key.
