@@ -32,7 +32,7 @@ Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke �
 
 ```bash
 sdk env                         # 切换到 JDK 25（使用 sdkman 时）
-export OPENAI_API_KEY=sk-...
+export ARK_API_KEY=...          # local 环境接火山方舟（OpenAI 兼容协议）
 ./gradlew bootRun               # 默认激活 local 环境
 ```
 
@@ -96,7 +96,7 @@ data:{"sessionId":"demo","text":"北京今天晴，25 度。","usage":{"inputTok
 配置按环境拆分，没有显式指定环境时默认激活 `local`；部署时用环境变量 `SPRING_PROFILES_ACTIVE=prod` 或命令行参数 `--spring.profiles.active=prod` 切换。
 
 - `application.yml`：各环境通用：模型、Agent、虚拟线程、日志格式
-- `application-local.yml`：本地开发：密钥读环境变量（可为空），`com.yoke` 日志为 debug
+- `application-local.yml`：本地开发：火山方舟的 `base-url` 与模型名写在文件里，密钥读环境变量 `ARK_API_KEY`（可为空），`com.yoke` 日志为 debug
 - `application-test.yml`：自动化测试：假密钥，不会真正调用模型
 - `application-prod.yml`：生产：密钥必须由环境变量提供，缺失则启动失败；优雅停机
 
@@ -104,7 +104,7 @@ data:{"sessionId":"demo","text":"北京今天晴，25 度。","usage":{"inputTok
 
 | 配置 | 说明 |
 |---|---|
-| `agentscope.openai.api-key` | 模型密钥，来自环境变量 `OPENAI_API_KEY` |
+| `agentscope.openai.api-key` | 模型密钥；`local` 读 `ARK_API_KEY`，`prod` 读 `OPENAI_API_KEY` |
 | `agentscope.openai.model-name` | 模型名称 |
 | `agentscope.openai.base-url` | 接入其他 OpenAI 兼容服务（DashScope、DeepSeek 等）时设置 |
 | `agentscope.agent.sys-prompt` | 系统提示词 |

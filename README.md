@@ -32,7 +32,7 @@ Requires JDK 25.
 
 ```bash
 sdk env                         # switch to JDK 25 (if you use sdkman)
-export OPENAI_API_KEY=sk-...
+export ARK_API_KEY=...          # the local profile talks to Volcengine Ark (OpenAI-compatible)
 ./gradlew bootRun               # the local profile is active by default
 ```
 
@@ -93,7 +93,7 @@ Every stream ends with either `done` or `error`. A blank `message` returns 400 b
 Configuration is split by profile. The `local` profile is active when none is specified; switch with the `SPRING_PROFILES_ACTIVE=prod` environment variable or the `--spring.profiles.active=prod` command-line argument.
 
 - `application.yml`: Shared by all profiles: model, agent, virtual threads, log format
-- `application-local.yml`: Local development: API key from the environment (may be empty), `com.yoke` logs at debug
+- `application-local.yml`: Local development: Volcengine Ark `base-url` and model name live in the file, the API key comes from `ARK_API_KEY` (may be empty), `com.yoke` logs at debug
 - `application-test.yml`: Automated tests: a fake API key, the model is never really called
 - `application-prod.yml`: Production: the API key must come from the environment, startup fails without it; graceful shutdown
 
@@ -101,7 +101,7 @@ The model is created by the official AgentScope starter from `agentscope.*`, and
 
 | Property | Description |
 |---|---|
-| `agentscope.openai.api-key` | Model API key, taken from the `OPENAI_API_KEY` environment variable |
+| `agentscope.openai.api-key` | Model API key; `local` reads `ARK_API_KEY`, `prod` reads `OPENAI_API_KEY` |
 | `agentscope.openai.model-name` | Model name |
 | `agentscope.openai.base-url` | Set this to use another OpenAI-compatible service (DashScope, DeepSeek, ...) |
 | `agentscope.agent.sys-prompt` | System prompt |

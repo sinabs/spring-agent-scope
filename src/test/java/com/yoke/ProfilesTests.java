@@ -13,12 +13,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 验证各环境的配置文件按预期加载。
  *
- * <p>local 和 prod 的密钥来自环境变量 OPENAI_API_KEY，这里用同名属性代替，避免依赖本机环境。
+ * <p>local 的密钥来自环境变量 ARK_API_KEY，prod 的来自 OPENAI_API_KEY，这里用同名属性代替，避免依赖本机环境。
  */
 class ProfilesTests {
 
     @Nested
-    @SpringBootTest(properties = "OPENAI_API_KEY=sk-test")
+    @SpringBootTest(properties = "ARK_API_KEY=sk-test")
     class 默认环境 {
 
         @Autowired
@@ -28,6 +28,13 @@ class ProfilesTests {
         void 没有指定环境时激活local() {
             assertThat(environment.getDefaultProfiles()).contains("local");
             assertThat(environment.getProperty("logging.level.com.yoke")).isEqualTo("debug");
+        }
+
+        @Test
+        void local环境接火山方舟且密钥来自ARK_API_KEY() {
+            assertThat(environment.getProperty("agentscope.openai.base-url")).isEqualTo("https://ark.cn-beijing.volces.com/api/v3");
+            assertThat(environment.getProperty("agentscope.openai.model-name")).isEqualTo("deepseek-v4-1-flash-260910");
+            assertThat(environment.getProperty("agentscope.openai.api-key")).isEqualTo("sk-test");
         }
     }
 
