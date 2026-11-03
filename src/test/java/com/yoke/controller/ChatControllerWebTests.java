@@ -1,10 +1,16 @@
 package com.yoke.controller;
 
+import com.yoke.config.AguiConfiguration;
+import com.yoke.support.AguiTestSupport;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -15,12 +21,15 @@ import reactor.core.publisher.Mono;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -34,9 +43,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 通过 MockMvc 验证请求校验：缺少或空白的 message 由 @NotBlank 拦截并返回 400。
+ * 通过 MockMvc 验证请求校验：同步接口缺少或空白的 message 由 @NotBlank 拦截，流式接口的请求体不合规由编解码层拦截，都返回 400。
  */
 @WebMvcTest(ChatController.class)
+@Import(AguiConfiguration.class)
 class ChatControllerWebTests {
 
     @Autowired
@@ -91,24 +101,43 @@ class ChatControllerWebTests {
                 .andExpect(jsonPath("$.sessionId").isNotEmpty());
     }
 
+    private static final String USER_HI = "[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"你好\"}]";
+
     @Test
-    void 流式接口缺少或空白的message时返回400() throws Exception {
-        for (String body : new String[] {"{}", "{\"message\":null}", "{\"message\":\"\"}", "{\"message\":\"  \"}"}) {
+    void 流式接口请求体不合法时返回400() throws Exception {
+        String[] bodies = {
+                "", "{", "[]", "{}",
+                "{\"threadId\":\"s-1\"}",
+                "{\"threadId\":\"s-1\",\"messages\":[]}",
+                "{\"threadId\":\"s-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"assistant\",\"content\":\"hi\"}]}",
+                "{\"threadId\":\"s-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"  \"}]}",
+                "{\"threadId\":\"../x\",\"messages\":" + USER_HI + "}",
+                "{\"messages\":" + USER_HI + "}"};
+        for (String body : bodies) {
             mvc.perform(post("/api/chat/stream").contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isBadRequest());
         }
+        // 400 发生在建立流之前，不会创建 Agent
+        verify(agentBuilder, never()).build();
+    }
+
+    private static Flux<AgentEvent> helloEvents() {
+        return Flux.just(
+                new AgentStartEvent("s-1", "r", "Yoke"),
+                new TextBlockStartEvent("r", "text"),
+                new TextBlockDeltaEvent("r", "text", "你"),
+                new TextBlockDeltaEvent("r", "text", "好"),
+                new TextBlockEndEvent("r", "text"),
+                new AgentResultEvent(new AssistantMessage("你好")),
+                new AgentEndEvent("r"));
     }
 
     @Test
-    void 流式接口返回事件流且事件名正确() throws Exception {
-        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(
-                new TextBlockDeltaEvent("r", "text", "你"),
-                new TextBlockDeltaEvent("r", "text", "好"),
-                new AgentResultEvent(new AssistantMessage("你好")),
-                new AgentEndEvent("r")));
+    void 流式接口返回事件流且只有data行() throws Exception {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(helloEvents());
 
         var started = mvc.perform(post("/api/chat/stream").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sessionId\":\"s-1\",\"message\":\"你好\"}"))
+                        .content(AguiTestSupport.body("s-1", "你好")))
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
@@ -118,19 +147,22 @@ class ChatControllerWebTests {
                 .andReturn().getResponse().getContentAsString(UTF_8);
 
         assertThat(body).containsSubsequence(
-                "event:textDelta", "data:{\"text\":\"你\"}",
-                "event:textDelta", "data:{\"text\":\"好\"}",
-                "event:done", "\"sessionId\":\"s-1\"", "\"text\":\"你好\"");
+                "data:{\"type\":\"RUN_STARTED\"", "\"threadId\":\"s-1\"",
+                "data:{\"type\":\"TEXT_MESSAGE_START\"",
+                "data:{\"type\":\"TEXT_MESSAGE_CONTENT\"", "\"delta\":\"你\"",
+                "data:{\"type\":\"TEXT_MESSAGE_CONTENT\"", "\"delta\":\"好\"",
+                "data:{\"type\":\"TEXT_MESSAGE_END\"",
+                "data:{\"type\":\"RUN_FINISHED\"");
+        // AG-UI 的类型在 JSON 里，不设 SSE 的 event 名
+        assertThat(body).doesNotContain("event:");
     }
 
     @Test
     void 流式接口的响应类型带UTF8字符集() throws Exception {
-        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(
-                new AgentResultEvent(new AssistantMessage("你好")),
-                new AgentEndEvent("r")));
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(helloEvents());
 
         var started = mvc.perform(post("/api/chat/stream").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sessionId\":\"s-1\",\"message\":\"你好\"}"))
+                        .content(AguiTestSupport.body("s-1", "你好")))
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
