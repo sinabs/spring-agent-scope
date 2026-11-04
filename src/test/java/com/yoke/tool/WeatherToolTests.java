@@ -143,6 +143,37 @@ class WeatherToolTests {
     }
 
     @Test
+    void 上游响应体超过上限时提示服务不可用() {
+        forecastBody = "{\"current\":\"" + "x".repeat(70 * 1024) + "\"}";
+
+        assertThat(tool.getWeather("北京")).isEqualTo("天气服务暂时不可用，请稍后再试。");
+    }
+
+    @Test
+    void 地名结果缺少经纬度时提示服务不可用且不去查天气() {
+        geocodingBody = "{\"results\":[{\"name\":\"北京\",\"longitude\":116.39723}]}";
+
+        assertThat(tool.getWeather("北京")).isEqualTo("天气服务暂时不可用，请稍后再试。");
+        assertThat(requests).as("经纬度缺失时不能拿 0 去查别的地方").hasSize(1);
+    }
+
+    @Test
+    void 当前天气缺少读数时提示服务不可用而不是编出0度() {
+        forecastBody = "{\"current\":{\"time\":\"2026-11-02T19:15\",\"weather_code\":0}}";
+
+        assertThat(tool.getWeather("北京")).isEqualTo("天气服务暂时不可用，请稍后再试。");
+    }
+
+    @Test
+    void 很小的经纬度不会被拼成科学计数法() {
+        geocodingBody = "{\"results\":[{\"name\":\"格林尼治\",\"latitude\":51.4769,\"longitude\":0.0001}]}";
+
+        tool.getWeather("格林尼治");
+
+        assertThat(requests.getLast()).contains("longitude=0.0001").doesNotContain("E-");
+    }
+
+    @Test
     void 连不上上游时提示服务不可用() {
         server.stop(0);
 

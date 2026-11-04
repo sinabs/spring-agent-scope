@@ -10,6 +10,7 @@ agentscope-bom = { module = "io.agentscope:agentscope-bom", version.ref = "agent
 agentscope-starter = { module = "io.agentscope:agentscope-spring-boot-starter" }
 agentscope-harness = { module = "io.agentscope:agentscope-harness" }
 agentscope-redis = { module = "io.agentscope:agentscope-extensions-redis" }
+agentscope-agui = { module = "io.agentscope:agentscope-extensions-agui" }
 agentscope-openai-starter = { module = "io.agentscope:agentscope-openai-spring-boot-starter" }
 testcontainers = { module = "org.testcontainers:testcontainers" }
 testcontainers-junit = { module = "org.testcontainers:testcontainers-junit-jupiter" }
