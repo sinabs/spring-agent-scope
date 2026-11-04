@@ -22,6 +22,8 @@ dependencies {
     implementation libs.spring.boot.starter.validation
     // 官方核心 starter：根据 agentscope.* 配置自动创建 ReActAgent
     implementation libs.agentscope.starter
+    // AG-UI 协议库：只要库本身（事件模型、适配器、编码器），不引官方的 agui starter（它的入口无认证、用单例 Agent）
+    implementation libs.agentscope.agui
     // 模型 starter：这里选 OpenAI 兼容协议，改 base-url 即可接入 DashScope、DeepSeek 等；换模型只需替换这一行
     implementation libs.agentscope.openai.starter
     // 字符串判空统一用 Hutool 的 StrUtil（isBlank / isNotBlank），只引核心包，不用 hutool-all

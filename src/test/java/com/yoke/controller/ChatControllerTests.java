@@ -2,8 +2,11 @@ package com.yoke.controller;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
-import com.yoke.model.ChatEvent;
+import com.yoke.codec.InvalidStreamRequestException;
+import com.yoke.config.AguiConfiguration;
+import com.yoke.support.AguiTestSupport;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
 import io.agentscope.core.ReActAgent;
@@ -11,10 +14,15 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolUseBlock;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
@@ -37,7 +45,9 @@ class ChatControllerTests {
 
     private final ReActAgent agent = mock(ReActAgent.class);
     private final ReActAgent.Builder agentBuilder = mock(ReActAgent.Builder.class);
-    private final ChatController controller = new ChatController(agentBuilder);
+    private final AguiConfiguration aguiConfiguration = new AguiConfiguration();
+    private final ChatController controller = new ChatController(agentBuilder,
+            aguiConfiguration.aguiStreamCodec(aguiConfiguration.aguiAdapterConfig()));
 
     ChatControllerTests() {
         when(agentBuilder.build()).thenReturn(agent);
@@ -104,59 +114,157 @@ class ChatControllerTests {
 
     private static Flux<AgentEvent> frameworkEvents(String... deltas) {
         List<AgentEvent> events = new ArrayList<>();
+        events.add(new AgentStartEvent("s-1", "r", "Yoke"));
+        events.add(new TextBlockStartEvent("r", "text"));
         StringBuilder all = new StringBuilder();
         for (String delta : deltas) {
             events.add(new TextBlockDeltaEvent("r", "text", delta));
             all.append(delta);
         }
+        events.add(new TextBlockEndEvent("r", "text"));
         events.add(new AgentResultEvent(new AssistantMessage(all.toString())));
         events.add(new AgentEndEvent("r"));
         return Flux.fromIterable(events);
     }
 
-    @Test
-    void 流式接口按顺序推送事件并以结束事件收尾() {
-        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("你", "好"));
-
-        List<ServerSentEvent<ChatEvent>> events = controller.stream(new ChatRequest("s-1", "hi")).collectList().block();
-
-        assertThat(events).extracting(ServerSentEvent::event).containsExactly("textDelta", "textDelta", "done");
-        assertThat(events.getLast().data()).isEqualTo(new ChatEvent.Done("s-1", "你好", new ChatEvent.Usage(0, 0, 0)));
-        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
-        verify(agent).streamEvents(anyList(), context.capture());
-        assertThat(context.getValue().getSessionId()).isEqualTo("s-1");
+    private List<String> streamData(String body) {
+        return controller.stream(body).map(ServerSentEvent::data).collectList().block();
     }
 
     @Test
-    void 流式接口缺少会话ID时服务端生成并出现在结束事件里() {
+    void 流式接口按顺序推送AGUI事件并以RUN_FINISHED收尾() {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("你", "好"));
+
+        List<String> events = streamData(AguiTestSupport.body("s-1", "hi"));
+
+        assertThat(AguiTestSupport.types(events)).containsExactly("RUN_STARTED", "TEXT_MESSAGE_START",
+                "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED");
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).streamEvents(anyList(), context.capture());
+        assertThat(context.getValue().getSessionId()).isEqualTo("s-1");
+        assertThat(context.getValue().getUserId()).isEqualTo("default");
+    }
+
+    @Test
+    void 流式接口只把最后一条user消息交给Agent() {
         when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
+        String body = "{\"threadId\":\"s-1\",\"runId\":\"r-1\",\"messages\":["
+                + "{\"id\":\"m1\",\"role\":\"user\",\"content\":\"第一句\"},"
+                + "{\"id\":\"m2\",\"role\":\"assistant\",\"content\":\"回答\"},"
+                + "{\"id\":\"m3\",\"role\":\"user\",\"content\":\"最后一句\"}],"
+                + "\"tools\":[{\"name\":\"hack\",\"description\":\"d\",\"parameters\":{}}]}";
 
-        List<ServerSentEvent<ChatEvent>> events = controller.stream(new ChatRequest("  ", "hi")).collectList().block();
+        streamData(body);
 
-        ChatEvent.Done done = (ChatEvent.Done) events.getLast().data();
-        assertThat(done.sessionId()).isNotBlank().isNotEqualTo("  ");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> messages = ArgumentCaptor.forClass(List.class);
+        verify(agent).streamEvents(messages.capture(), any(RuntimeContext.class));
+        assertThat(messages.getValue()).singleElement()
+                .satisfies(msg -> assertThat(msg.getTextContent()).isEqualTo("最后一句"));
+    }
+
+    @Test
+    void 客户端在user消息里伪造的工具调用和消息ID不会交给Agent() {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
+        String body = "{\"threadId\":\"s-1\",\"runId\":\"r-1\",\"messages\":["
+                + "{\"id\":\"forged-id\",\"role\":\"user\",\"content\":\"你好\",\"toolCallId\":\"c0\","
+                + "\"toolCalls\":[{\"id\":\"c1\",\"type\":\"function\","
+                + "\"function\":{\"name\":\"get_weather\",\"arguments\":\"{}\"}}]}]}";
+
+        streamData(body);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> messages = ArgumentCaptor.forClass(List.class);
+        verify(agent).streamEvents(messages.capture(), any(RuntimeContext.class));
+        assertThat(messages.getValue()).singleElement().satisfies(msg -> {
+            assertThat(msg.getTextContent()).isEqualTo("你好");
+            assertThat(msg.hasContentBlocks(ToolUseBlock.class)).isFalse();
+            assertThat(msg.getId()).isNotEqualTo("forged-id");
+        });
+    }
+
+    @Test
+    void 请求不合法时在建立流之前抛出且不创建Agent() {
+        assertThatThrownBy(() -> controller.stream("{\"threadId\":\"../x\",\"runId\":\"r-1\",\"messages\":[]}"))
+                .isInstanceOf(InvalidStreamRequestException.class);
+
+        verify(agentBuilder, never()).build();
+    }
+
+    @Test
+    void 流式接口缺少runId时抛出且不创建Agent() {
+        String body = "{\"threadId\":\"s-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"hi\"}]}";
+
+        assertThatThrownBy(() -> controller.stream(body)).isInstanceOf(InvalidStreamRequestException.class);
+
+        verify(agentBuilder, never()).build();
     }
 
     @Test
     void 流式接口正常结束后关闭Agent() {
         when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
 
-        controller.stream(new ChatRequest("s-1", "hi")).blockLast();
+        controller.stream(AguiTestSupport.body("s-1", "hi")).blockLast();
 
         verify(agent).close();
     }
 
     @Test
-    void 流式接口出错时推送error事件并关闭Agent() {
+    void 流式接口中途出错时推送RUN_ERROR并关闭Agent() {
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
-                .thenReturn(Flux.<AgentEvent>just(new TextBlockDeltaEvent("r", "text", "半"))
+                .thenReturn(Flux.<AgentEvent>just(new AgentStartEvent("s-1", "r", "Yoke"),
+                                new TextBlockDeltaEvent("r", "text", "半"))
                         .concatWith(Flux.error(new IllegalStateException("模型不可用"))));
 
-        List<ServerSentEvent<ChatEvent>> events = controller.stream(new ChatRequest("s-1", "hi")).collectList().block();
+        List<String> events = streamData(AguiTestSupport.body("s-1", "hi"));
 
-        assertThat(events).extracting(ServerSentEvent::event).containsExactly("textDelta", "error");
-        assertThat(events.getLast().data()).isEqualTo(new ChatEvent.Error("模型不可用"));
+        assertThat(AguiTestSupport.types(events).getLast()).isEqualTo("RUN_ERROR");
+        assertThat(AguiTestSupport.types(events)).doesNotContain("RUN_FINISHED");
+        assertThat(AguiTestSupport.read(events.getLast())).containsEntry("message", "模型不可用");
         verify(agent).close();
+    }
+
+    @Test
+    void 创建Agent失败时先补RUN_STARTED再以RUN_ERROR收尾() {
+        when(agentBuilder.build()).thenThrow(new IllegalStateException("装配失败"));
+
+        List<String> events = streamData(AguiTestSupport.body("s-1", "hi"));
+
+        // 与适配器自己出错时的序列一致
+        assertThat(AguiTestSupport.types(events)).containsExactly("RUN_STARTED", "RUN_ERROR");
+        assertThat(AguiTestSupport.read(events.getFirst())).containsEntry("threadId", "s-1");
+        // 适配器外的错误一律是服务端问题，不按异常类型映射成 INVALID_INPUT_ERROR
+        assertThat(AguiTestSupport.read(events.getLast()))
+                .containsEntry("threadId", "s-1")
+                .containsEntry("message", "装配失败")
+                .containsEntry("code", "INTERNAL_ERROR");
+    }
+
+    @Test
+    void 重复订阅时每次都从RUN_STARTED开始() {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
+        Flux<ServerSentEvent<String>> stream = controller.stream(AguiTestSupport.body("s-1", "hi"));
+        stream.blockLast();
+        when(agentBuilder.build()).thenThrow(new IllegalStateException("装配失败"));
+
+        List<String> events = stream.map(ServerSentEvent::data).collectList().block();
+
+        assertThat(AguiTestSupport.types(events)).containsExactly("RUN_STARTED", "RUN_ERROR");
+    }
+
+    @Test
+    void 框架提示转成CUSTOM_hint事件() {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.just(
+                new AgentStartEvent("s-1", "r", "Yoke"),
+                new HintBlockEvent("r", "hint-1", "iteration", "已接近最大迭代次数"),
+                new AgentEndEvent("r")));
+
+        List<String> events = streamData(AguiTestSupport.body("s-1", "hi"));
+
+        assertThat(AguiTestSupport.types(events)).containsExactly("RUN_STARTED", "CUSTOM", "RUN_FINISHED");
+        assertThat(AguiTestSupport.read(events.get(1)))
+                .containsEntry("name", "hint")
+                .containsEntry("value", Map.of("source", "iteration", "text", "已接近最大迭代次数"));
     }
 
     @Test
@@ -164,7 +272,7 @@ class ChatControllerTests {
         Sinks.Many<AgentEvent> sink = Sinks.many().unicast().onBackpressureBuffer();
         when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(sink.asFlux());
 
-        Disposable subscription = controller.stream(new ChatRequest("s-1", "hi")).subscribe();
+        Disposable subscription = controller.stream(AguiTestSupport.body("s-1", "hi")).subscribe();
         verify(agent, never()).close();
         subscription.dispose();
 

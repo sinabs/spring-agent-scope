@@ -1,6 +1,5 @@
 package com.yoke.api;
 
-import com.yoke.model.ChatEvent;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
 import jakarta.validation.Valid;
@@ -33,6 +32,8 @@ public interface ChatApi {
      * 并在响应里返回新的会话 ID，后续请求带上它即可延续对话。
      *
      * <p>{@code message} 为必填：缺失、为 null、空串或纯空白时都由参数校验拦截，返回 400。
+     * {@code sessionId} 为空白时视同未传；传了就要符合 {@link com.yoke.model.SafeId} 的规则
+     * （字母、数字、{@code _.-}，1~64 位，不能全是点），否则返回 400。规则与 {@link #stream} 的 {@code threadId} 相同。
      *
      * @param request 对话请求，包含可选的会话 ID 和必填的用户输入
      * @return Agent 的回复，以及本次对话所属的会话 ID
@@ -41,37 +42,62 @@ public interface ChatApi {
     Mono<ChatResponse> chat(@Valid @RequestBody ChatRequest request);
 
     /**
-     * 向 Agent 发送一条消息，以 SSE（{@code text/event-stream}）边推理边推送事件。
+     * 以 AG-UI 协议向 Agent 发送一条消息，用 SSE（{@code text/event-stream}）边推理边推送 AG-UI 事件。
      *
-     * <p>请求体和会话规则与 {@link #chat} 相同：同一个 {@code sessionId} 共享对话历史，
-     * 不传时由服务端新建会话，新的会话 ID 出现在最后的 {@code done} 事件里；{@code message} 缺失、
-     * 为 null、空串或纯空白时在建立流之前就被参数校验拦截，返回 400。
+     * <p>请求体是标准的 AG-UI {@code RunAgentInput} JSON，{@code Content-Type} 必须是 {@code application/json}
+     * （否则返回 415，也避免跨站页面用不触发预检的 {@code text/plain} 请求发起对话）。这里以字符串接收，由实现解析和校验，
+     * 所以契约里不出现框架类型。校验失败（请求体不是合法 JSON、{@code messages} 为空、最后一条不是 user 消息、
+     * 最后一条 user 消息没有非空白的文本、{@code threadId} 缺失或不合规）都在建立流之前返回 400。
+     * 目前只支持纯文本的 {@code content}，多模态内容块不支持。
      *
-     * <p>SSE 的 event 名与事件类型一一对应，data 是 JSON，一次对话可能依次出现：
+     * <p>{@code threadId} 就是会话 ID，同一个 {@code threadId} 共享对话历史，也与 {@link #chat} 的
+     * {@code sessionId} 共用同一份历史。AG-UI 要求客户端自己生成 {@code threadId}，所以这里必填，
+     * 取值限制为字母、数字、{@code _.-}，1~64 位，不能全是点，避免被用来拼出别的会话的存储位置。
+     * {@code runId} 必填（RunAgentInput 要求非空），缺失或空白返回 400。
+     *
+     * <p>对话历史保存在服务端的状态存储里，服务端只采用 {@code messages} 的<b>最后一条 user 消息</b>，
+     * 前面的消息、{@code tools}、{@code context}、{@code state}、{@code forwardedProps}、{@code resume}
+     * 都会被忽略，客户端不能借此给 Agent 增加工具或改写历史。这条 user 消息也只取文本：它的 {@code id}、
+     * {@code toolCalls}、{@code toolCallId} 不会进入历史，消息 ID 由服务端生成。
+     *
+     * <p>SSE 只发 {@code data:}，不设 {@code event:} 名，事件类型在 JSON 的 {@code type} 字段里。
+     * 一次对话可能依次出现：
      * <ul>
-     *   <li>{@code textDelta}：模型生成的一段文本增量，按顺序拼接即得到回复；</li>
-     *   <li>{@code toolCall}：模型决定调用的工具，名称和入参已经攒齐；</li>
-     *   <li>{@code toolResult}：工具的执行结果，与 {@code toolCall} 靠相同的 {@code id} 对应；</li>
-     *   <li>{@code hint}：框架在推理过程中追加的提示；</li>
-     *   <li>{@code done}：正常结束，带完整回复文本、会话 ID 和累计 token 用量；</li>
-     *   <li>{@code error}：推理过程中出错。</li>
+     *   <li>{@code RUN_STARTED}：第一个事件，带 {@code threadId} 和 {@code runId}；</li>
+     *   <li>{@code TEXT_MESSAGE_START}、{@code TEXT_MESSAGE_CONTENT}（{@code delta} 是文本增量）、
+     *       {@code TEXT_MESSAGE_END}：模型生成的文本，按顺序拼接 {@code delta} 即得到回复；</li>
+     *   <li>{@code TOOL_CALL_START}、{@code TOOL_CALL_ARGS}、{@code TOOL_CALL_END}、
+     *       {@code TOOL_CALL_RESULT}：工具调用及其结果，靠相同的 {@code toolCallId} 对应；
+     *       {@code TOOL_CALL_ARGS} 的 {@code delta} 是入参 JSON 的片段，只有模型分片返回入参时才会出现，
+     *       不要依赖它一定存在；</li>
+     *   <li>{@code CUSTOM}，{@code name} 为 {@code token_usage}：每次模型调用结束后推送一次用量，
+     *       {@code value} 里有本次增量和累计值；</li>
+     *   <li>{@code CUSTOM}，{@code name} 为 {@code hint}：框架在推理过程中追加的提示，
+     *       {@code value} 里是 {@code source} 和 {@code text}；</li>
+     *   <li>{@code RUN_FINISHED}：正常结束；</li>
+     *   <li>{@code RUN_ERROR}：推理过程中出错。</li>
      * </ul>
-     * 一次对话以 {@code done} 或 {@code error} 结尾，二者必有其一且只会出现一个。
-     * 这个承诺依赖 2.0.4 框架在流结束时总会发出结束事件，实现里没有额外的兜底。
+     * 没有 {@code done} 事件，也不会重复最终全文：完整回复由客户端拼接 {@code TEXT_MESSAGE_CONTENT} 得到。
      *
-     * <p>{@code error} 事件会原样带出异常信息，未做脱敏，调用方不要直接展示给终端用户。
+     * <p>一次对话以 {@code RUN_FINISHED} 或 {@code RUN_ERROR} 结尾，二者互斥，只会出现一个。
+     * 这个承诺依赖适配器的行为（出错时默认不补 {@code RUN_FINISHED}）和 AgentScope 框架在流结束时总会发出结束事件，
+     * 实现里没有额外的兜底。{@code RUN_ERROR} 的 {@code message} 是原样的异常信息，未做脱敏，
+     * 调用方不要直接展示给终端用户。
      *
-     * <p>错误通过 {@code error} 事件体现，HTTP 状态码仍是 200 并正常结束流，而不是中途断开连接，
+     * <p>错误通过 {@code RUN_ERROR} 事件体现，HTTP 状态码仍是 200 并正常结束流，而不是中途断开连接，
      * 所以调用方只需要根据最后一个事件判断成败。
      *
      * <p>每次请求新建一个临时 Agent：流正常结束、出错或被客户端取消（断开连接）时都会关闭它。
      *
      * <p>已知限制：与 {@link #chat} 一样，同一个会话的并发请求不会被串行化，
-     * 由调用方保证同一会话同一时间只发一个请求；取消时已经产生的部分对话是否写入历史，取决于框架的保存时机。
+     * 由调用方保证同一会话同一时间只发一个请求；取消时已经产生的部分对话是否写入历史，取决于框架的保存时机；
+     * 运行超时未验证：AgentScope 的适配器配置里有 {@code runTimeout}，但源码里没有任何地方读取它。
      *
-     * @param request 对话请求，包含可选的会话 ID 和必填的用户输入
-     * @return 事件流，最后一个事件是 {@code done} 或 {@code error}
+     * @param body AG-UI {@code RunAgentInput} 的 JSON 文本
+     * @return 事件流，每个元素的 data 是一个 AG-UI 事件的 JSON，最后一个事件是 {@code RUN_FINISHED} 或 {@code RUN_ERROR}
      */
-    @PostMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    Flux<ServerSentEvent<ChatEvent>> stream(@Valid @RequestBody ChatRequest request);
+    @PostMapping(path = "/stream",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    Flux<ServerSentEvent<String>> stream(@RequestBody String body);
 }

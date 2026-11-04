@@ -19,7 +19,7 @@
 
 A yoke is the wooden frame that makes oxen and horses pull in the direction you want. Yoke does the same for models: it is the runtime layer wrapped around a model so it can do real work reliably. It turns AgentScope's agent capabilities into a ready-to-use HTTP service, so you can focus on your business logic instead of glue code:
 
-- One endpoint for multi-turn conversations: `POST /api/chat`, plus `POST /api/chat/stream` that streams the reasoning process over SSE.
+- One endpoint for multi-turn conversations: `POST /api/chat`, plus `POST /api/chat/stream` that streams the reasoning process over SSE using the AG-UI protocol.
 - A built-in `get_weather` tool queries current weather through the open-source [Open-Meteo](https://open-meteo.com) API (no key needed; its free tier is for non-commercial use only).
 - A temporary agent is built for every request and closed afterwards; conversation history lives in a shared state store and is isolated per session.
 - Models are plugged in through the official AgentScope starters: OpenAI-compatible APIs (works with DashScope, DeepSeek and others), Anthropic, Gemini and Ollama. Switching is a dependency and configuration change.
@@ -44,47 +44,65 @@ curl -X POST localhost:8080/api/chat \
 # {"sessionId":"…","reply":"…"}
 ```
 
-Send the returned `sessionId` with later requests to continue the same conversation; conversations with different `sessionId`s are isolated from each other. Run the tests with `./gradlew build`.
+Send the returned `sessionId` with later requests to continue the same conversation; conversations with different `sessionId`s are isolated from each other. A `sessionId` you send yourself must follow the same rule as `threadId` below (letters, digits and `_.-`, 1 to 64 characters, not all dots), otherwise the request returns 400; a blank one is treated as missing. Run the tests with `./gradlew build`.
 
-### Streaming
+### Streaming (AG-UI)
 
-`POST /api/chat/stream` takes the same request body and pushes events (`text/event-stream`) while the agent is reasoning. Use `curl -N` to turn off buffering:
+`POST /api/chat/stream` speaks the [AG-UI](https://docs.ag-ui.com/concepts/events) protocol: the request body is a standard `RunAgentInput`, and the response is a `text/event-stream` of AG-UI events pushed while the agent is reasoning. Use `curl -N` to turn off buffering:
 
 ```bash
 curl -N -X POST localhost:8080/api/chat/stream \
   -H 'Content-Type: application/json' \
-  -d '{"sessionId": "demo", "message": "What is the weather in Beijing?"}'
+  -d '{"threadId": "demo", "runId": "run-1", "messages": [{"id": "msg-1", "role": "user", "content": "What is the weather in Beijing?"}]}'
 ```
 
-Illustrative output (from a stub model):
+Request rules (any violation returns 400 before the stream starts):
+
+- `Content-Type` must be `application/json`, otherwise 415. This also stops a cross-site page from starting a run with a `text/plain` request that skips the CORS preflight
+- `threadId` is the session ID and is required: letters, digits and `_.-`, 1 to 64 characters, not all dots. It shares the same history as `sessionId` of `POST /api/chat`
+- `runId` is required and must not be blank (`RunAgentInput` requires it)
+- `messages` must not be empty, every message needs an `id` and a `role`, and the last one must be a `user` message with non-blank plain text (multimodal content blocks are not supported)
+- The server keeps the history itself and only uses the **last** `user` message. Earlier messages, `tools`, `context`, `state`, `forwardedProps` and `resume` are ignored, so a client cannot add tools to the agent or rewrite the history. Only the text of that message is kept: its `id`, `toolCalls` and `toolCallId` never reach the history, and the message ID is generated on the server. The adapter is also configured with `ToolMergeMode.AGENT_ONLY`, so only server-registered tools are ever used
+
+Illustrative output (values are made up, field names come from real runs against a stub model, long fields are elided). Only `data:` lines are sent; the event type is the `type` field in the JSON, there is no SSE `event:` name:
 
 ```
-event:textDelta
-data:{"text":"Let me check."}
+data:{"type":"RUN_STARTED","threadId":"demo","runId":"…","input":{…}}
 
-event:toolCall
-data:{"id":"call_1","name":"get_weather","arguments":"{\"city\":\"Beijing\"}"}
+data:{"type":"TOOL_CALL_START","threadId":"demo","runId":"…","toolCallId":"call_1","toolCallName":"get_weather"}
 
-event:toolResult
-data:{"id":"call_1","name":"get_weather","state":"success","output":"\"Sunny, 25 C\""}
+data:{"type":"TOOL_CALL_ARGS","threadId":"demo","runId":"…","toolCallId":"call_1","delta":"{\"city\":\"Beijing\"}"}
 
-event:textDelta
-data:{"text":"It is sunny, 25 C."}
+data:{"type":"TOOL_CALL_END","threadId":"demo","runId":"…","toolCallId":"call_1"}
 
-event:done
-data:{"sessionId":"demo","text":"It is sunny, 25 C.","usage":{"inputTokens":83,"outputTokens":27,"totalTokens":110}}
+data:{"type":"TOOL_CALL_RESULT","threadId":"demo","runId":"…","toolCallId":"call_1","content":"\"Sunny, 25 C\"","role":"tool","messageId":"…"}
+
+data:{"type":"TEXT_MESSAGE_START","threadId":"demo","runId":"…","messageId":"…","role":"assistant"}
+
+data:{"type":"TEXT_MESSAGE_CONTENT","threadId":"demo","runId":"…","messageId":"…","delta":"It is sunny, 25 C."}
+
+data:{"type":"TEXT_MESSAGE_END","threadId":"demo","runId":"…","messageId":"…"}
+
+data:{"type":"CUSTOM","threadId":"demo","runId":"…","name":"token_usage","value":{"delta":{…},"cumulative":{"inputTokens":83,"outputTokens":27,…},"modelCall":{…}}}
+
+data:{"type":"RUN_FINISHED","threadId":"demo","runId":"…"}
 ```
 
-The event names form a closed set:
+| Event `type` | Meaning |
+|---|---|
+| `RUN_STARTED` | Always the first event, carries `threadId` and `runId` |
+| `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_END` | Generated text; concatenate the `delta` of the `CONTENT` events in order to get the reply |
+| `TOOL_CALL_START` / `TOOL_CALL_ARGS` / `TOOL_CALL_END` | A tool the model decided to call; `TOOL_CALL_ARGS` carries fragments of the arguments JSON and only appears when the model streams the arguments in pieces |
+| `TOOL_CALL_RESULT` | The result of a tool, matched to the call by `toolCallId` |
+| `CUSTOM` with `name` = `token_usage` | Token usage after each model call, with `delta` and `cumulative` |
+| `CUSTOM` with `name` = `hint` | A hint the framework adds during reasoning, `value` has `source` and `text` |
+| `RUN_FINISHED` | The normal end |
+| `RUN_ERROR` | Reasoning failed; the HTTP status is still 200 and the stream ends normally instead of dropping the connection. The message is the raw exception message and is not redacted, so do not show it to end users directly |
 
-- `textDelta`: a chunk of generated text; concatenate them in order to get the reply
-- `toolCall`: a tool the model decided to call, with its name and arguments already assembled
-- `toolResult`: the result of a tool, matched to its `toolCall` by `id`
-- `hint`: a hint the framework adds during reasoning
-- `done`: the normal end, with the full reply, the `sessionId` (generated by the server if you did not send one) and the accumulated token usage
-- `error`: reasoning failed; the HTTP status is still 200 and the stream ends normally instead of dropping the connection. The message is the raw exception message and is not redacted, so do not show it to end users directly
+Every stream starts with `RUN_STARTED`, even when the agent cannot be created, and ends with either `RUN_FINISHED` or `RUN_ERROR`, never both. When the agent fails while running, the AG-UI adapter maps the exception to `code` (`TIMEOUT_ERROR`, `INTERRUPTED_ERROR`, `INVALID_INPUT_ERROR` or `INTERNAL_ERROR`); failures outside the adapter, such as the agent not being created, are always `INTERNAL_ERROR`. There is no `done` event and the final text is not repeated: the client concatenates `TEXT_MESSAGE_CONTENT`. The temporary agent is closed when the stream completes, fails or the client disconnects. The adapter's `runTimeout` setting is not read by AgentScope 2.0.4, so it does not limit the run time.
 
-Every stream ends with either `done` or `error`. A blank `message` returns 400 before the stream starts. The temporary agent is closed when the stream completes, fails or the client disconnects.
+> **Breaking change**
+> The earlier private events (`textDelta`, `toolCall`, `toolResult`, `hint`, `done`, `error`) and the `{"sessionId", "message"}` request body of the streaming endpoint are gone. The streaming endpoint now only accepts `Content-Type: application/json`; requests without a `Content-Type`, or with `text/plain` or `application/*+json`, get 415. `POST /api/chat` now validates `sessionId` with the same rule as `threadId` (non-blank values like `user:42` used to be accepted and now return 400); a blank `sessionId` still starts a new session.
 
 > **Note**
 > The default in-memory state store only suits a single process, and history is lost when the service restarts. For multi-instance deployments, switch to a Redis or JDBC implementation. Concurrent requests for the same session are not serialized, so avoid sending them at the same time.
@@ -116,10 +134,10 @@ To use another model, replace `agentscope-openai-spring-boot-starter` in `build.
 src/main/java/com/yoke/
 ├── YokeApplication.java        Application entry point
 ├── api/                        HTTP contract (ChatApi: paths, validation and docs live here)
-├── codec/                      Conversion between domain types and framework types (MessageCodec, EventCodec)
-├── config/                     Shared agent configuration (builder, state store)
+├── codec/                      Conversion between domain types and framework types (MessageCodec, AguiStreamCodec, HintEventConverter)
+├── config/                     Shared agent configuration (builder, state store, AG-UI adapter)
 ├── controller/                 Contract implementation (ChatController)
-└── model/                      Request, response and stream event objects (ChatRequest, ChatResponse, ChatEvent)
+└── model/                      Request and response objects (ChatRequest, ChatResponse)
 src/main/resources/             application.yml and the per-profile configuration
 docs/brand/                     Logo
 ```
