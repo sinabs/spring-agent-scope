@@ -101,7 +101,26 @@ class ChatControllerWebTests {
                 .andExpect(jsonPath("$.sessionId").isNotEmpty());
     }
 
+    @Test
+    void sessionId不合规时返回400() throws Exception {
+        for (String sessionId : new String[] {"user:42", "a/b", "../x", "..", "a b", "中文", "a".repeat(65)}) {
+            mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"sessionId\":\"" + sessionId + "\",\"message\":\"你好\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+        verify(agentBuilder, never()).build();
+    }
+
     private static final String USER_HI = "[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"你好\"}]";
+
+    @Test
+    void 流式接口只接受JSON请求体() throws Exception {
+        // text/plain 是不触发 CORS 预检的简单请求，必须拒绝，否则任何网页都能跨站发起对话
+        mvc.perform(post("/api/chat/stream").contentType(MediaType.TEXT_PLAIN)
+                        .content(AguiTestSupport.body("s-1", "你好")))
+                .andExpect(status().isUnsupportedMediaType());
+        verify(agentBuilder, never()).build();
+    }
 
     @Test
     void 流式接口请求体不合法时返回400() throws Exception {

@@ -44,7 +44,7 @@ curl -X POST localhost:8080/api/chat \
 # {"sessionId":"…","reply":"…"}
 ```
 
-Send the returned `sessionId` with later requests to continue the same conversation; conversations with different `sessionId`s are isolated from each other. Run the tests with `./gradlew build`.
+Send the returned `sessionId` with later requests to continue the same conversation; conversations with different `sessionId`s are isolated from each other. A `sessionId` you send yourself must follow the same rule as `threadId` below (letters, digits and `_.-`, 1 to 64 characters, not all dots), otherwise the request returns 400; a blank one is treated as missing. Run the tests with `./gradlew build`.
 
 ### Streaming (AG-UI)
 
@@ -58,10 +58,11 @@ curl -N -X POST localhost:8080/api/chat/stream \
 
 Request rules (any violation returns 400 before the stream starts):
 
+- `Content-Type` must be `application/json`, otherwise 415. This also stops a cross-site page from starting a run with a `text/plain` request that skips the CORS preflight
 - `threadId` is the session ID and is required: letters, digits and `_.-`, 1 to 64 characters, not all dots. It shares the same history as `sessionId` of `POST /api/chat`
 - `runId` is required and must not be blank (`RunAgentInput` requires it)
 - `messages` must not be empty, every message needs an `id` and a `role`, and the last one must be a `user` message with non-blank plain text (multimodal content blocks are not supported)
-- The server keeps the history itself and only uses the **last** `user` message. Earlier messages, `tools`, `context`, `state`, `forwardedProps` and `resume` are ignored, so a client cannot add tools to the agent or rewrite the history
+- The server keeps the history itself and only uses the **last** `user` message. Earlier messages, `tools`, `context`, `state`, `forwardedProps` and `resume` are ignored, so a client cannot add tools to the agent or rewrite the history. Only the text of that message is kept: its `id`, `toolCalls` and `toolCallId` never reach the history, and the message ID is generated on the server. The adapter is also configured with `ToolMergeMode.AGENT_ONLY`, so only server-registered tools are ever used
 
 Illustrative output (values are made up, field names come from real runs against a stub model, long fields are elided). Only `data:` lines are sent; the event type is the `type` field in the JSON, there is no SSE `event:` name:
 
@@ -98,10 +99,10 @@ data:{"type":"RUN_FINISHED","threadId":"demo","runId":"…"}
 | `RUN_FINISHED` | The normal end |
 | `RUN_ERROR` | Reasoning failed; the HTTP status is still 200 and the stream ends normally instead of dropping the connection. The message is the raw exception message and is not redacted, so do not show it to end users directly |
 
-Every stream ends with either `RUN_FINISHED` or `RUN_ERROR`, and never both. There is no `done` event and the final text is not repeated: the client concatenates `TEXT_MESSAGE_CONTENT`. The temporary agent is closed when the stream completes, fails or the client disconnects. The adapter's `runTimeout` setting is not read by AgentScope 2.0.4, so it does not limit the run time.
+Every stream starts with `RUN_STARTED`, even when the agent cannot be created, and ends with either `RUN_FINISHED` or `RUN_ERROR`, never both. When the agent fails while running, the AG-UI adapter maps the exception to `code` (`TIMEOUT_ERROR`, `INTERRUPTED_ERROR`, `INVALID_INPUT_ERROR` or `INTERNAL_ERROR`); failures outside the adapter, such as the agent not being created, are always `INTERNAL_ERROR`. There is no `done` event and the final text is not repeated: the client concatenates `TEXT_MESSAGE_CONTENT`. The temporary agent is closed when the stream completes, fails or the client disconnects. The adapter's `runTimeout` setting is not read by AgentScope 2.0.4, so it does not limit the run time.
 
 > **Breaking change**
-> The earlier private events (`textDelta`, `toolCall`, `toolResult`, `hint`, `done`, `error`) and the `{"sessionId", "message"}` request body of the streaming endpoint are gone. `POST /api/chat` is unchanged.
+> The earlier private events (`textDelta`, `toolCall`, `toolResult`, `hint`, `done`, `error`) and the `{"sessionId", "message"}` request body of the streaming endpoint are gone. The streaming endpoint now only accepts `Content-Type: application/json`; requests without a `Content-Type`, or with `text/plain` or `application/*+json`, get 415. `POST /api/chat` now validates `sessionId` with the same rule as `threadId` (non-blank values like `user:42` used to be accepted and now return 400); a blank `sessionId` still starts a new session.
 
 > **Note**
 > The default in-memory state store only suits a single process, and history is lost when the service restarts. For multi-instance deployments, switch to a Redis or JDBC implementation. Concurrent requests for the same session are not serialized, so avoid sending them at the same time.

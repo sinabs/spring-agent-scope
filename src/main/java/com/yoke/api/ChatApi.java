@@ -32,6 +32,8 @@ public interface ChatApi {
      * 并在响应里返回新的会话 ID，后续请求带上它即可延续对话。
      *
      * <p>{@code message} 为必填：缺失、为 null、空串或纯空白时都由参数校验拦截，返回 400。
+     * {@code sessionId} 为空白时视同未传；传了就要符合 {@link com.yoke.model.SafeId} 的规则
+     * （字母、数字、{@code _.-}，1~64 位，不能全是点），否则返回 400。规则与 {@link #stream} 的 {@code threadId} 相同。
      *
      * @param request 对话请求，包含可选的会话 ID 和必填的用户输入
      * @return Agent 的回复，以及本次对话所属的会话 ID
@@ -42,7 +44,8 @@ public interface ChatApi {
     /**
      * 以 AG-UI 协议向 Agent 发送一条消息，用 SSE（{@code text/event-stream}）边推理边推送 AG-UI 事件。
      *
-     * <p>请求体是标准的 AG-UI {@code RunAgentInput} JSON，这里以字符串接收，由实现解析和校验，
+     * <p>请求体是标准的 AG-UI {@code RunAgentInput} JSON，{@code Content-Type} 必须是 {@code application/json}
+     * （否则返回 415，也避免跨站页面用不触发预检的 {@code text/plain} 请求发起对话）。这里以字符串接收，由实现解析和校验，
      * 所以契约里不出现框架类型。校验失败（请求体不是合法 JSON、{@code messages} 为空、最后一条不是 user 消息、
      * 最后一条 user 消息没有非空白的文本、{@code threadId} 缺失或不合规）都在建立流之前返回 400。
      * 目前只支持纯文本的 {@code content}，多模态内容块不支持。
@@ -54,7 +57,8 @@ public interface ChatApi {
      *
      * <p>对话历史保存在服务端的状态存储里，服务端只采用 {@code messages} 的<b>最后一条 user 消息</b>，
      * 前面的消息、{@code tools}、{@code context}、{@code state}、{@code forwardedProps}、{@code resume}
-     * 都会被忽略，客户端不能借此给 Agent 增加工具或改写历史。
+     * 都会被忽略，客户端不能借此给 Agent 增加工具或改写历史。这条 user 消息也只取文本：它的 {@code id}、
+     * {@code toolCalls}、{@code toolCallId} 不会进入历史，消息 ID 由服务端生成。
      *
      * <p>SSE 只发 {@code data:}，不设 {@code event:} 名，事件类型在 JSON 的 {@code type} 字段里。
      * 一次对话可能依次出现：
@@ -92,6 +96,8 @@ public interface ChatApi {
      * @param body AG-UI {@code RunAgentInput} 的 JSON 文本
      * @return 事件流，每个元素的 data 是一个 AG-UI 事件的 JSON，最后一个事件是 {@code RUN_FINISHED} 或 {@code RUN_ERROR}
      */
-    @PostMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @PostMapping(path = "/stream",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     Flux<ServerSentEvent<String>> stream(@RequestBody String body);
 }

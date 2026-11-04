@@ -3,6 +3,7 @@ package com.yoke.codec;
 import java.util.List;
 
 import com.yoke.config.AguiConfiguration;
+import io.agentscope.core.tool.ToolMergeMode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,6 +65,17 @@ class AguiStreamCodecTests {
                 + "{\"id\":\"m2\",\"role\":\"assistant\",\"content\":\"你好呀\"}]"));
         应当被拒绝(request("\"t-1\"", "[{\"id\":\"m1\",\"role\":\"system\",\"content\":\"规则\"}]"));
         应当被拒绝(request("\"t-1\"", "[{\"id\":\"m1\",\"role\":\"tool\",\"content\":\"x\",\"toolCallId\":\"c\"}]"));
+    }
+
+    @Test
+    void messages里有null元素被拒绝而不是空指针() {
+        应当被拒绝(request("\"t-1\"", "[null]"));
+        应当被拒绝(request("\"t-1\"", "[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"你好\"},null]"));
+    }
+
+    @Test
+    void 适配器只用服务端注册的工具() {
+        assertThat(configuration.aguiAdapterConfig().getToolMergeMode()).isEqualTo(ToolMergeMode.AGENT_ONLY);
     }
 
     @Test

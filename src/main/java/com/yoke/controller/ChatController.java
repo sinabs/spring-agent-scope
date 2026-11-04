@@ -2,6 +2,7 @@ package com.yoke.controller;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.hutool.core.util.StrUtil;
 import com.yoke.api.ChatApi;
@@ -46,13 +47,19 @@ public class ChatController implements ChatApi {
         // 校验失败在这里抛出，发生在建立流之前，所以是 400 而不是流内错误
         AguiStreamCodec.StreamRequest request = aguiCodec.parse(body);
 
-        return Flux.using(
-                        agentBuilder::build,
-                        agent -> aguiCodec.stream(agent, request, contextOf(request.threadId())),
-                        ReActAgent::close)
-                .onErrorResume(error -> {
-                    log.warn("流式对话出错，threadId={}", request.threadId(), error);
-                    return Flux.just(aguiCodec.encodeError(request, error));
+        return Flux.defer(() -> {
+                    // 记录是否已经发出过事件：没发出过（例如创建 Agent 失败）就要先补 RUN_STARTED。
+                    // 放在 defer 里，每次订阅一份，重复订阅时不会沿用上一次的状态
+                    AtomicBoolean started = new AtomicBoolean();
+                    return Flux.using(
+                                    agentBuilder::build,
+                                    agent -> aguiCodec.stream(agent, request, contextOf(request.threadId())),
+                                    ReActAgent::close)
+                            .doOnNext(data -> started.set(true))
+                            .onErrorResume(error -> {
+                                log.warn("流式对话出错，threadId={}", request.threadId(), error);
+                                return aguiCodec.encodeError(request, error, started.get());
+                            });
                 })
                 .map(data -> ServerSentEvent.builder(data).build());
     }
