@@ -147,7 +147,7 @@ class ChatControllerTests {
     @Test
     void 流式接口只把最后一条user消息交给Agent() {
         when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
-        String body = "{\"threadId\":\"s-1\",\"messages\":["
+        String body = "{\"threadId\":\"s-1\",\"runId\":\"r-1\",\"messages\":["
                 + "{\"id\":\"m1\",\"role\":\"user\",\"content\":\"第一句\"},"
                 + "{\"id\":\"m2\",\"role\":\"assistant\",\"content\":\"回答\"},"
                 + "{\"id\":\"m3\",\"role\":\"user\",\"content\":\"最后一句\"}],"
@@ -164,20 +164,19 @@ class ChatControllerTests {
 
     @Test
     void 请求不合法时在建立流之前抛出且不创建Agent() {
-        assertThatThrownBy(() -> controller.stream("{\"threadId\":\"../x\",\"messages\":[]}"))
+        assertThatThrownBy(() -> controller.stream("{\"threadId\":\"../x\",\"runId\":\"r-1\",\"messages\":[]}"))
                 .isInstanceOf(InvalidStreamRequestException.class);
 
         verify(agentBuilder, never()).build();
     }
 
     @Test
-    void 流式接口缺少runId时服务端生成并出现在事件里() {
-        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
+    void 流式接口缺少runId时抛出且不创建Agent() {
         String body = "{\"threadId\":\"s-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"hi\"}]}";
 
-        List<String> events = streamData(body);
+        assertThatThrownBy(() -> controller.stream(body)).isInstanceOf(InvalidStreamRequestException.class);
 
-        assertThat(AguiTestSupport.read(events.getFirst()).get("runId")).asString().isNotBlank();
+        verify(agentBuilder, never()).build();
     }
 
     @Test

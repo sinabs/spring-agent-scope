@@ -2,7 +2,7 @@
 ### 使用前：export ARK_API_KEY=... 后 ./gradlew bootRun（默认激活 local 环境，端口 8080）。
 ### 想换地址或会话，改下面两个变量；换一个新的 threadId 就等于清空历史。
 ### 流式接口收标准的 AG-UI RunAgentInput：threadId 就是会话 ID（必填，字母数字 _.- 共 1~64 位），
-### runId 可省略（服务端生成），messages 里的每条消息必须有 id 和 role，服务端只采用最后一条 user 消息。
+### runId 必填（本次运行的 ID，每次请求换一个），messages 里的每条消息必须有 id 和 role，服务端只采用最后一条 user 消息。
 @host = http://localhost:8080
 @thread = demo-01
 
@@ -13,6 +13,7 @@ Content-Type: application/json
 
 {
   "threadId": "{{thread}}",
+  "runId": "run-1",
   "messages": [
     { "id": "msg-1", "role": "user", "content": "用一句话介绍一下你自己" }
   ]
@@ -34,6 +35,7 @@ Content-Type: application/json
 
 {
   "threadId": "{{thread}}",
+  "runId": "run-2",
   "messages": [
     { "id": "msg-1", "role": "user", "content": " " }
   ]
@@ -46,6 +48,7 @@ Content-Type: application/json
 
 {
   "threadId": "{{thread}}-weather",
+  "runId": "run-3",
   "messages": [
     { "id": "msg-1", "role": "user", "content": "北京现在天气怎么样？要带伞吗？" }
   ]
@@ -67,6 +70,7 @@ Content-Type: application/json
 
 {
   "threadId": "{{thread}}-notfound",
+  "runId": "run-4",
   "messages": [
     { "id": "msg-1", "role": "user", "content": "查一下 Zxqvbnmlkj 这个城市的天气" }
   ]

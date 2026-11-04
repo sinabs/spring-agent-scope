@@ -53,13 +53,13 @@ curl -X POST localhost:8080/api/chat \
 ```bash
 curl -N -X POST localhost:8080/api/chat/stream \
   -H 'Content-Type: application/json' \
-  -d '{"threadId": "demo", "messages": [{"id": "msg-1", "role": "user", "content": "北京天气怎么样"}]}'
+  -d '{"threadId": "demo", "runId": "run-1", "messages": [{"id": "msg-1", "role": "user", "content": "北京天气怎么样"}]}'
 ```
 
 请求规则（任何一条不满足，都会在建立流之前返回 400）：
 
 - `threadId` 就是会话 ID，必填：字母、数字、`_.-`，1~64 位，不能全是点。它与 `POST /api/chat` 的 `sessionId` 共用同一份历史
-- `runId` 可省略；缺失或空白时由服务端生成 UUID
+- `runId` 必填且不能为空白（`RunAgentInput` 要求非空）
 - `messages` 不能为空，每条消息都要有 `id` 和 `role`，最后一条必须是 `user` 消息且有非空白的纯文本（不支持多模态内容块）
 - 对话历史由服务端保存，只采用**最后一条** `user` 消息；前面的消息、`tools`、`context`、`state`、`forwardedProps`、`resume` 都会被忽略，客户端不能借此给 Agent 加工具或改写历史
 

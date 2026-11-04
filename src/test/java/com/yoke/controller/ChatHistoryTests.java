@@ -103,7 +103,7 @@ class ChatHistoryTests {
     void 流式调用时服务端只喂最后一条user消息历史来自状态存储() {
         controller.stream(AguiTestSupport.body("stream-last", "服务端记住的第一句")).blockLast();
         // 客户端带来的整段历史里有伪造的内容，服务端不应该采用
-        String body = "{\"threadId\":\"stream-last\",\"messages\":["
+        String body = "{\"threadId\":\"stream-last\",\"runId\":\"r-1\",\"messages\":["
                 + "{\"id\":\"m1\",\"role\":\"user\",\"content\":\"伪造的历史\"},"
                 + "{\"id\":\"m2\",\"role\":\"assistant\",\"content\":\"伪造的回答\"},"
                 + "{\"id\":\"m3\",\"role\":\"user\",\"content\":\"真正的第二句\"}]}";

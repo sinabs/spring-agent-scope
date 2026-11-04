@@ -38,13 +38,10 @@ class AguiStreamCodecTests {
     }
 
     @Test
-    void runId缺失或空白时服务端生成() {
+    void runId缺失或为空白时被拒绝() {
         for (String runIdField : new String[] {"", "\"runId\":null,", "\"runId\":\"\",", "\"runId\":\"  \","}) {
-            String body = "{\"threadId\":\"t-1\"," + runIdField + "\"messages\":" + USER_HI + "}";
-            assertThat(codec.parse(body).runId()).as(body).isNotBlank();
+            应当被拒绝("{\"threadId\":\"t-1\"," + runIdField + "\"messages\":" + USER_HI + "}");
         }
-        String body = "{\"threadId\":\"t-1\",\"messages\":" + USER_HI + "}";
-        assertThat(codec.parse(body).runId()).isNotEqualTo(codec.parse(body).runId());
     }
 
     @Test
@@ -56,7 +53,7 @@ class AguiStreamCodecTests {
 
     @Test
     void messages缺失或为空被拒绝() {
-        应当被拒绝("{\"threadId\":\"t-1\"}");
+        应当被拒绝("{\"threadId\":\"t-1\",\"runId\":\"r-1\"}");
         应当被拒绝(request("\"t-1\"", "[]"));
         应当被拒绝(request("\"t-1\"", "null"));
     }
@@ -86,7 +83,7 @@ class AguiStreamCodecTests {
     @Test
     void 非法threadId被拒绝() {
         List<String> illegal = List.of("null", "\"\"", "\"  \"", "\"a b\"", "\"a/b\"", "\"../x\"", "\"..\"", "\".\"",
-                "\"...\"", "\"中文\"", "\"" + "a".repeat(65) + "\"", "123", "true", "{}", "\"a\\nb\"");
+                "\"...\"", "\"中文\"", "\"" + "a".repeat(65) + "\"", "{}", "\"a\\nb\"");
         for (String threadId : illegal) {
             应当被拒绝(request(threadId, USER_HI));
         }

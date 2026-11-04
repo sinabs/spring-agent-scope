@@ -1,11 +1,8 @@
 package com.yoke.codec;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 import cn.hutool.core.util.StrUtil;
@@ -17,8 +14,10 @@ import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.util.JsonUtils;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Flux;
 
 /**
@@ -29,6 +28,7 @@ import reactor.core.publisher.Flux;
  *
  * <p>无请求态字段，可被所有请求共享。
  */
+@RequiredArgsConstructor
 public final class AguiStreamCodec {
 
     /** threadId 的取值规则，与 {@code @SafeId} 一致：字母数字 {@code _.-}，1~64 位，不能全是点。 */
@@ -36,15 +36,13 @@ public final class AguiStreamCodec {
 
     private static final Pattern ALL_DOTS = Pattern.compile("\\.+");
 
+    /** RUN_ERROR 的错误码。与适配器自己对未知异常使用的取值一致，库里没有公开这个常量。 */
+    static final String INTERNAL_ERROR_CODE = "INTERNAL_ERROR";
+
+    @NonNull
     private final AguiAdapterConfig config;
 
-    private final AguiRequestBodyParser parser = new AguiRequestBodyParser();
-
     private final AguiEventEncoder encoder = new AguiEventEncoder();
-
-    public AguiStreamCodec(AguiAdapterConfig config) {
-        this.config = Objects.requireNonNull(config, "config");
-    }
 
     /**
      * 解析并校验请求体。
@@ -59,36 +57,30 @@ public final class AguiStreamCodec {
         if (StrUtil.isBlank(body)) {
             throw new InvalidStreamRequestException("请求体不能为空");
         }
-        Map<String, Object> raw = readObject(body);
-        String threadId = Optional.ofNullable(raw.get("threadId"))
-                .filter(String.class::isInstance)
-                .map(String.class::cast)
-                .orElse(null);
-        if (!isSafeId(threadId)) {
+        RunAgentInput parsed = readInput(body);
+        if (!isSafeId(parsed.getThreadId())) {
             throw new InvalidStreamRequestException("threadId 必须是 1~64 位的字母、数字或 _.-，且不能全是点");
         }
-        // RunAgentInput 要求 runId 非空，客户端没传就由服务端生成
-        String runId = Optional.ofNullable(raw.get("runId"))
-                .filter(String.class::isInstance)
-                .map(String.class::cast)
-                .filter(StrUtil::isNotBlank)
-                .orElseGet(() -> UUID.randomUUID().toString());
-        raw.put("runId", runId);
+        if (StrUtil.isBlank(parsed.getRunId())) {
+            throw new InvalidStreamRequestException("runId 不能为空");
+        }
 
-        RunAgentInput parsed = parseInput(raw);
-        if (parsed.getMessages().isEmpty()) {
+        List<AguiMessage> messages = parsed.getMessages();
+        if (messages.isEmpty()) {
             throw new InvalidStreamRequestException("messages 不能为空");
         }
-        AguiMessage last = parsed.getMessages().getLast();
+        AguiMessage last = messages.getLast();
         if (!last.isUserMessage()) {
             throw new InvalidStreamRequestException("messages 的最后一条必须是 user 消息");
         }
         if (StrUtil.isBlank(last.getTextContent())) {
             throw new InvalidStreamRequestException("最后一条 user 消息必须有非空白的文本内容");
         }
+        // 重建而不是直接用 parsed：适配器会把 messages 全部转成 Agent 的输入，历史已在状态存储里，
+        // 不能再喂一遍；tools、state 等客户端字段也不能带进去。RunAgentInput 不可变，只能用 builder 重新构造
         RunAgentInput input = RunAgentInput.builder()
-                .threadId(threadId)
-                .runId(runId)
+                .threadId(parsed.getThreadId())
+                .runId(parsed.getRunId())
                 .messages(List.of(last))
                 .build();
         return new StreamRequest(input);
@@ -109,7 +101,7 @@ public final class AguiStreamCodec {
         String message = Optional.ofNullable(error.getMessage())
                 .filter(StrUtil::isNotBlank)
                 .orElseGet(() -> error.getClass().getSimpleName());
-        return encode(new AguiEvent.RunError(request.threadId(), request.runId(), message, "INTERNAL_ERROR"));
+        return encode(new AguiEvent.RunError(request.threadId(), request.runId(), message, INTERNAL_ERROR_CODE));
     }
 
     /** encodeToJson 在 JSON 前带一个空格（给 {@code data:} 凑成 {@code data: {...}}），这里去掉，SSE 规范允许冒号后无空格。 */
@@ -121,39 +113,30 @@ public final class AguiStreamCodec {
         return Objects.nonNull(id) && SAFE_ID.matcher(id).matches() && !ALL_DOTS.matcher(id).matches();
     }
 
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> readObject(String body) {
-        Map<String, Object> raw;
+    /**
+     * 解析成 {@link RunAgentInput}。它的构造器要求 {@code threadId}、{@code runId} 非空，缺了会抛
+     * {@link NullPointerException}（经 Jackson 包装成别的异常），这里统一按 400 处理。
+     */
+    private RunAgentInput readInput(String body) {
+        RunAgentInput parsed;
         try {
-            raw = JsonUtils.getJsonCodec().fromJson(body, Map.class);
+            parsed = JsonUtils.getJsonCodec().fromJson(body, RunAgentInput.class);
         } catch (RuntimeException e) {
-            throw new InvalidStreamRequestException("请求体不是合法的 JSON 对象", e);
+            throw new InvalidStreamRequestException("请求体不是合法的 RunAgentInput（threadId、runId、messages 必填）", e);
         }
-        if (Objects.isNull(raw)) {
+        if (Objects.isNull(parsed)) {
             throw new InvalidStreamRequestException("请求体不是合法的 JSON 对象");
         }
-        // 解析出来的 Map 可能不可变，复制一份再补 runId
-        return new LinkedHashMap<>(raw);
-    }
-
-    private RunAgentInput parseInput(Map<String, Object> raw) {
-        try {
-            return parser.parse(JsonUtils.getJsonCodec().toJson(raw));
-        } catch (RuntimeException e) {
-            throw new InvalidStreamRequestException("请求体不是合法的 RunAgentInput", e);
-        }
+        return parsed;
     }
 
     /**
      * 校验通过的流式请求，只带「最后一条 user 消息」。
      */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     public static final class StreamRequest {
 
         private final RunAgentInput input;
-
-        private StreamRequest(RunAgentInput input) {
-            this.input = input;
-        }
 
         public String threadId() {
             return input.getThreadId();

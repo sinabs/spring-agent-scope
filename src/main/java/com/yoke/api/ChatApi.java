@@ -50,7 +50,7 @@ public interface ChatApi {
      * <p>{@code threadId} 就是会话 ID，同一个 {@code threadId} 共享对话历史，也与 {@link #chat} 的
      * {@code sessionId} 共用同一份历史。AG-UI 要求客户端自己生成 {@code threadId}，所以这里必填，
      * 取值限制为字母、数字、{@code _.-}，1~64 位，不能全是点，避免被用来拼出别的会话的存储位置。
-     * {@code runId} 可省略，省略时由服务端生成 UUID。
+     * {@code runId} 必填（RunAgentInput 要求非空），缺失或空白返回 400。
      *
      * <p>对话历史保存在服务端的状态存储里，服务端只采用 {@code messages} 的<b>最后一条 user 消息</b>，
      * 前面的消息、{@code tools}、{@code context}、{@code state}、{@code forwardedProps}、{@code resume}
@@ -76,7 +76,7 @@ public interface ChatApi {
      * 没有 {@code done} 事件，也不会重复最终全文：完整回复由客户端拼接 {@code TEXT_MESSAGE_CONTENT} 得到。
      *
      * <p>一次对话以 {@code RUN_FINISHED} 或 {@code RUN_ERROR} 结尾，二者互斥，只会出现一个。
-     * 这个承诺依赖适配器的行为（出错时默认不补 {@code RUN_FINISHED}）和 2.0.4 框架在流结束时总会发出结束事件，
+     * 这个承诺依赖适配器的行为（出错时默认不补 {@code RUN_FINISHED}）和 AgentScope 框架在流结束时总会发出结束事件，
      * 实现里没有额外的兜底。{@code RUN_ERROR} 的 {@code message} 是原样的异常信息，未做脱敏，
      * 调用方不要直接展示给终端用户。
      *
@@ -87,7 +87,7 @@ public interface ChatApi {
      *
      * <p>已知限制：与 {@link #chat} 一样，同一个会话的并发请求不会被串行化，
      * 由调用方保证同一会话同一时间只发一个请求；取消时已经产生的部分对话是否写入历史，取决于框架的保存时机；
-     * 运行超时未验证：2.0.4 的适配器配置里有 {@code runTimeout}，但源码里没有任何地方读取它。
+     * 运行超时未验证：AgentScope 的适配器配置里有 {@code runTimeout}，但源码里没有任何地方读取它。
      *
      * @param body AG-UI {@code RunAgentInput} 的 JSON 文本
      * @return 事件流，每个元素的 data 是一个 AG-UI 事件的 JSON，最后一个事件是 {@code RUN_FINISHED} 或 {@code RUN_ERROR}

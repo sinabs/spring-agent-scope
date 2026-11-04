@@ -1,6 +1,5 @@
 package com.yoke.codec;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -28,10 +27,14 @@ public final class HintEventConverter implements AgentEventConverter {
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
         HintBlockEvent hint = (HintBlockEvent) event;
-        // Map.of 不接受 null，提示来源和内容缺失时按空串处理
-        Map<String, String> value = Map.of(
-                "source", Optional.ofNullable(hint.getHintSource()).orElse(""),
-                "text", Optional.ofNullable(hint.getHint()).orElse(""));
+        // 提示来源和内容缺失时按空串处理，保证对外字段不为 null
+        HintPayload value = new HintPayload(
+                Optional.ofNullable(hint.getHintSource()).orElse(""),
+                Optional.ofNullable(hint.getHint()).orElse(""));
         context.emit(new AguiEvent.Custom(context.getThreadId(), context.getRunId(), EVENT_NAME, value));
+    }
+
+    /** hint 事件的 value，字段名即对外 JSON 的字段名。 */
+    public record HintPayload(String source, String text) {
     }
 }

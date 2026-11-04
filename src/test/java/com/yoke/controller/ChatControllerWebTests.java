@@ -107,11 +107,11 @@ class ChatControllerWebTests {
     void 流式接口请求体不合法时返回400() throws Exception {
         String[] bodies = {
                 "", "{", "[]", "{}",
-                "{\"threadId\":\"s-1\"}",
-                "{\"threadId\":\"s-1\",\"messages\":[]}",
-                "{\"threadId\":\"s-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"assistant\",\"content\":\"hi\"}]}",
-                "{\"threadId\":\"s-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"  \"}]}",
-                "{\"threadId\":\"../x\",\"messages\":" + USER_HI + "}",
+                "{\"threadId\":\"s-1\",\"runId\":\"r-1\"}",
+                "{\"threadId\":\"s-1\",\"runId\":\"r-1\",\"messages\":[]}",
+                "{\"threadId\":\"s-1\",\"runId\":\"r-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"assistant\",\"content\":\"hi\"}]}",
+                "{\"threadId\":\"s-1\",\"runId\":\"r-1\",\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"  \"}]}",
+                "{\"threadId\":\"../x\",\"runId\":\"r-1\",\"messages\":" + USER_HI + "}",
                 "{\"messages\":" + USER_HI + "}"};
         for (String body : bodies) {
             mvc.perform(post("/api/chat/stream").contentType(MediaType.APPLICATION_JSON).content(body))

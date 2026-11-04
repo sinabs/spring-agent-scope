@@ -53,13 +53,13 @@ Send the returned `sessionId` with later requests to continue the same conversat
 ```bash
 curl -N -X POST localhost:8080/api/chat/stream \
   -H 'Content-Type: application/json' \
-  -d '{"threadId": "demo", "messages": [{"id": "msg-1", "role": "user", "content": "What is the weather in Beijing?"}]}'
+  -d '{"threadId": "demo", "runId": "run-1", "messages": [{"id": "msg-1", "role": "user", "content": "What is the weather in Beijing?"}]}'
 ```
 
 Request rules (any violation returns 400 before the stream starts):
 
 - `threadId` is the session ID and is required: letters, digits and `_.-`, 1 to 64 characters, not all dots. It shares the same history as `sessionId` of `POST /api/chat`
-- `runId` is optional; the server generates a UUID when it is missing or blank
+- `runId` is required and must not be blank (`RunAgentInput` requires it)
 - `messages` must not be empty, every message needs an `id` and a `role`, and the last one must be a `user` message with non-blank plain text (multimodal content blocks are not supported)
 - The server keeps the history itself and only uses the **last** `user` message. Earlier messages, `tools`, `context`, `state`, `forwardedProps` and `resume` are ignored, so a client cannot add tools to the agent or rewrite the history
 
