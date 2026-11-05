@@ -17,21 +17,21 @@
 
 > A Spring-based agent harness.
 
-Yoke 是友客AI的开源项目：大家一起学习 AgentScope Java V2 和 Spring 的源码与用法，在实践中开发出一个真正能用的 Agent 服务。Yoke（轭）原指套在牛马身上、让它们朝着正确方向使劲的木架，Yoke 也是如此：它是套在模型外面、让模型稳定干活的那层运行框架，把 AgentScope 的 Agent 能力包装成开箱即用的 HTTP 服务。
+Yoke 是友客AI的开源项目。大家一起读 AgentScope Java V2 和 Spring 的源码，边学边做，做出一个能真正跑起来的 Agent 服务。Yoke（轭）原指套在牛马身上、让它们朝一个方向使劲的木架。Yoke 套在模型外面，让它稳定干活。
 
-- 想用 AgentScope Java 做个 Agent 服务，Demo 十几行就能跑，可一到"要给用户用"，问题就来了：每个请求一个 Agent 还是全局一个？对话历史放哪？
-- 流式输出、工具调用、多轮会话、权限收紧，这些在官方文档里是分散的例子，拼到一个 Spring Boot 项目里，到底该怎么分层、守哪些边界？
-- 官方的 starter 能一行引入，可它的入口没有认证、Agent 是单例，直接上线会出什么事？哪些该用，哪些该自己写？
-- 这个项目从一个能对话的接口开始，一课加一层，每一课只解决一个工程问题，代码开源、可以直接运行，也会如实写下没验证的限制和踩过的坑。
+- 用 AgentScope Java 做 Agent，十几行代码就能跑通 Demo。真要给用户用，麻烦才开始：Agent 每个请求新建一个，还是全局共用一个？对话历史放哪？
+- 流式输出、工具调用、多轮会话、权限收紧，官方文档里都是零散的例子。拼进一个 Spring Boot 项目，怎么分层、哪些边界必须守住，只能自己摸索。
+- 官方 starter 一行就能引入，但它的入口没有认证，Agent 又是单例，原样上线，不同用户的会话会串在一起。哪些能用、哪些得自己写，这个项目会给出判断。
+- 项目从一个能对话的接口起步，每课只解决一个工程问题，代码开源、能直接运行。没验证过的限制和踩过的坑，也写在文章里。
 
 ### 特性
 
 - 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，按 AG-UI 协议通过 SSE 边推理边推送。
-- 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 接口查询当前天气（无需密钥，免费版仅限非商业使用）。
-- 每次请求新建临时 `HarnessAgent`，用完即关闭；对话历史保存在 Redis 里，重启不丢、多副本共享，按 `(userId, sessionId)` 隔离，对话过长时自动压缩。
-- 除 `get_weather` 外 Agent 没有其他工具：不开放文件、命令和联网，子 Agent 整体关闭；日志中间件为每次调用记录耗时轨迹。
+- 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 查当前天气，免密钥（免费版仅限非商业使用）。
+- 每次请求新建一个临时 `HarnessAgent`，用完即关闭。对话历史存在 Redis 里，重启不丢，多个副本共享，按 `(userId, sessionId)` 隔离，对话过长时自动压缩。
+- 除 `get_weather` 外，Agent 没有其他工具：不开放文件、命令和联网，子 Agent 整体关闭。日志中间件为每次调用记录耗时轨迹。
 - 通过 AgentScope 官方 starter 接入各种模型：OpenAI 兼容协议（可对接 DashScope、DeepSeek 等）、Anthropic、Gemini、Ollama，换依赖和配置即可。
-- local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
+- 有 local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
 - 默认开启虚拟线程，Tomcat 和 Spring 默认线程池都使用虚拟线程。
 
 ## 快速开始
