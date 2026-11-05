@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
  *   <li>只传 {@code userId}：为该用户新建一个会话，新的会话 ID 在响应里返回；</li>
  *   <li>都不传：{@code default} 用户下新建会话。</li>
  * </ul>
- * 不能把「只给其一」当成无会话直接交给框架：2.0.4 里缺 {@code sessionId} 会落到以 Agent 名称命名的共享会话，
+ * 不能把「只给其一」当成无会话直接交给框架：AgentScope 在缺 {@code sessionId} 时会落到以 Agent 名称命名的共享会话，
  * 缺 {@code userId} 会落到匿名用户，所有调用方的历史都会混在一起。
  *
  * <p>标识格式：{@code userId} 和 {@code sessionId} 只能包含字母、数字、下划线、点和短横线，长度 1 到 64，
@@ -38,7 +38,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
  * 同一个会话的并发请求不会被串行化，由调用方保证同一会话同一时间只发一个请求。
  *
  * <p>工具权限：Agent 不开放文件读写、命令执行和联网工具，也整体关闭了子 Agent。
- * 读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，
+ * 读 AgentScope 源码发现，子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，
  * 开着子 Agent 就能让模型通过 {@code agent_spawn} 派生出能联网的子 Agent，所以整体关闭。
  * 关闭后模型仍能用的只有 {@code memory_save}、{@code memory_get}、{@code memory_search}、{@code session_history}、
  * {@code session_list}、{@code session_search}、{@code load_skill_through_path} 和 {@code wait_async_results}：

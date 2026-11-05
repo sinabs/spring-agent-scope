@@ -1,5 +1,6 @@
 package com.yoke.config;
 
+import com.yoke.tool.WeatherTool;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.DistributedStore;
@@ -14,10 +15,10 @@ import org.springframework.context.annotation.Import;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-class AgentConfigurationTests {
+class HarnessAgentFactoryTests {
 
     @Configuration(proxyBeanMethods = false)
-    @Import(AgentConfiguration.class)
+    @Import({WeatherTool.class, HarnessAgentFactory.class})
     static class Base {
 
         @Bean

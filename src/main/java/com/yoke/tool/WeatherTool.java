@@ -16,10 +16,13 @@ import java.util.StringJoiner;
 import cn.hutool.core.util.StrUtil;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+
+import org.springframework.stereotype.Component;
 
 /**
  * 天气查询工具，数据来自开源的 Open-Meteo（无需密钥）：先用地名换经纬度，再查当前天气。
@@ -30,6 +33,8 @@ import tools.jackson.databind.json.JsonMapper;
  * 工具方法不抛异常：失败时返回一句人话，让模型据此回答用户，而不是让整次对话报错。
  */
 @Slf4j
+@Component
+@RequiredArgsConstructor
 public class WeatherTool {
 
     static final String GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search";
@@ -53,23 +58,16 @@ public class WeatherTool {
 
     private final String forecastUrl;
 
-    private final HttpClient httpClient;
+    // 地址是写死的，不需要跟随重定向，避免被引到别处
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(CONNECT_TIMEOUT)
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build();
 
     private final JsonMapper mapper = JsonMapper.builder().build();
 
     public WeatherTool() {
         this(GEOCODING_URL, FORECAST_URL);
-    }
-
-    /** 上游地址可注入，测试里指向本机的假服务，不访问真实网络。 */
-    public WeatherTool(String geocodingUrl, String forecastUrl) {
-        this.geocodingUrl = geocodingUrl;
-        this.forecastUrl = forecastUrl;
-        // 地址是写死的，不需要跟随重定向，避免被引到别处
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(CONNECT_TIMEOUT)
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .build();
     }
 
     @Tool(name = "get_weather", readOnly = true, concurrencySafe = true,

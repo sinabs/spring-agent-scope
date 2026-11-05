@@ -47,7 +47,7 @@ class YokeApplicationTests extends RedisIntegrationTest {
             }
         }
 
-        // 如果像 ReActAgent 那样共享同一个 HarnessAgent.Builder，2.0.4 每次 build 都会多追加一批中间件
+        // 如果像 ReActAgent 那样共享同一个 HarnessAgent.Builder，AgentScope 的每次 build 都会多追加一批中间件
         assertThat(sizes[1]).isEqualTo(sizes[0]);
         assertThat(sizes[2]).isEqualTo(sizes[0]);
     }

@@ -59,6 +59,17 @@ History is stored per `(userId, sessionId)`. Both are optional in the request bo
 
 A half-empty pair is never passed on to the framework, because in AgentScope 2.0.4 a missing `sessionId` falls into one shared session named after the agent, and a missing `userId` falls into an anonymous user, which would mix everyone's history together. Both ids may only contain letters, digits, `_`, `.` and `-` (1 to 64 characters, not all dots, so `.` and `..` are rejected); anything else returns 400. The framework joins them as `userId/sessionId`, so allowing `/` would let different pairs collide on one slot, and `userId` also becomes a workspace directory name. There is no authentication yet: `userId` is whatever the caller says, so it is not an identity check.
 
+What is stored in Redis, per session (checked against a real model, two turns with one tool call):
+
+| Key | Type | Content |
+|---|---|---|
+| `yoke:session:{userId}/{sessionId}:agent_state` | String | One JSON document with the whole agent state. The conversation is its `context` array (one entry per message: `USER`, `ASSISTANT` with `tool_use`, `TOOL` with `tool_result`, ...), next to `summary` (filled by compaction) and a few empty context objects. About 3.3 KB for two turns |
+| `yoke:session:{userId}/{sessionId}:agent_state:ver` | String | Version number used for optimistic concurrency, bumped on every save |
+| `yoke:session:{userId}/{sessionId}:_keys` | Set | Names of all state keys of the session (only `agent_state` here), used to delete a whole session |
+
+The model's `thinking` blocks and per-message token usage are stored too, and the whole document is read and written back on every turn, so it grows with the conversation. There is no separate message list key.
+
+
 ### Streaming (AG-UI)
 
 `POST /api/chat/stream` speaks the [AG-UI](https://docs.ag-ui.com/concepts/events) protocol: the request body is a standard `RunAgentInput`, and the response is a `text/event-stream` of AG-UI events pushed while the agent is reasoning. Use `curl -N` to turn off buffering:

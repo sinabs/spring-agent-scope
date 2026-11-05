@@ -1,6 +1,8 @@
 package com.yoke.support;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import io.agentscope.core.message.Msg;
@@ -24,8 +26,8 @@ public class RecordingModel implements Model {
     @Override
     public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         received.add(List.copyOf(messages));
-        receivedTools.add(tools == null ? List.of() : tools.stream().map(ToolSchema::getName).toList());
-        if (messages.stream().anyMatch(msg -> msg.getTextContent() != null && msg.getTextContent().contains(FAIL_TRIGGER))) {
+        receivedTools.add(Optional.ofNullable(tools).map(list -> list.stream().map(ToolSchema::getName).toList()).orElse(List.of()));
+        if (messages.stream().anyMatch(msg -> Objects.nonNull(msg.getTextContent()) && msg.getTextContent().contains(FAIL_TRIGGER))) {
             return Flux.error(new IllegalStateException("模型服务不可用"));
         }
         return Flux.just(ChatResponse.builder()
@@ -41,6 +43,6 @@ public class RecordingModel implements Model {
     /** 最近一次调用的输入里有没有出现某段文字。 */
     public boolean lastCallContains(String text) {
         return received.getLast().stream()
-                .anyMatch(msg -> msg.getTextContent() != null && msg.getTextContent().contains(text));
+                .anyMatch(msg -> Objects.nonNull(msg.getTextContent()) && msg.getTextContent().contains(text));
     }
 }

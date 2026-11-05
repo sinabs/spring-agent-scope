@@ -1,12 +1,15 @@
 package com.yoke.config;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
+import com.yoke.tool.WeatherTool;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 
@@ -84,13 +87,16 @@ class YokePropertiesTests {
     @Test
     void 只按条数触发压缩且token阈值不会先触发() {
         HarnessAgentFactory factory = new HarnessAgentFactory(
-                "Yoke", "prompt", 10, null, null, null, null, new YokeProperties.Compaction(30, 10), List.of());
+                null, null, new AgentscopeProperties(),
+                new YokeProperties(new YokeProperties.Redis("redis://127.0.0.1:6379", "yoke:"),
+                        new YokeProperties.Compaction(30, 10), "/tmp/yoke-test"),
+                new WeatherTool(), new DefaultListableBeanFactory().getBeanProvider(MiddlewareBase.class));
 
         CompactionConfig config = factory.compactionConfig();
 
         assertThat(config.getTriggerMessages()).isEqualTo(30);
         assertThat(config.getKeepMessages()).isEqualTo(10);
-        // 0 在 2.0.4 里是「按上下文窗口动态计算」，不是关闭；用最大值让 token 阈值实际上不会先触发
+        // AgentScope 中 0 表示「按上下文窗口动态计算」，不是关闭；用最大值让 token 阈值实际上不会先触发
         assertThat(config.getTriggerTokens()).isEqualTo(Integer.MAX_VALUE);
         // 0 才改用 keepMessages，默认 -1 是动态 token
         assertThat(config.getKeepTokens()).isZero();

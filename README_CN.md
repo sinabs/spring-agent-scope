@@ -59,6 +59,17 @@ curl -X POST localhost:8080/api/chat \
 
 不会把「只给其一」直接交给框架：AgentScope 2.0.4 里缺 `sessionId` 会落到以 Agent 名称命名的共享会话，缺 `userId` 会落到匿名用户，所有调用方的历史会混在一起。两个标识只能包含字母、数字、`_`、`.`、`-`，长度 1 到 64，且不能全是点（`.`、`..` 会被拒绝），否则返回 400。原因是框架把槽位拼成 `userId/sessionId`，允许 `/` 会让不同的一对撞到同一个槽位，`userId` 还会成为工作区的目录名。目前没有鉴权，`userId` 由调用方自报，不是身份校验。
 
+每个会话在 Redis 里存了什么（用真实模型实测：两轮对话，其中一轮调用了工具）：
+
+| 键 | 类型 | 内容 |
+|---|---|---|
+| `yoke:session:{userId}/{sessionId}:agent_state` | String | 一份 JSON，是整个 Agent 状态。对话在它的 `context` 数组里（一条消息一项：`USER`、带 `tool_use` 的 `ASSISTANT`、带 `tool_result` 的 `TOOL` 等），旁边是 `summary`（压缩后的摘要落点）和几个空的上下文对象。两轮约 3.3 KB |
+| `yoke:session:{userId}/{sessionId}:agent_state:ver` | String | 乐观并发用的版本号，每次保存递增 |
+| `yoke:session:{userId}/{sessionId}:_keys` | Set | 该会话下所有状态键的名字（这里只有 `agent_state`），删除整个会话时靠它 |
+
+模型的 `thinking` 内容和每条消息的 token 用量也会一并存下；每一轮都是整份读出、整份写回，所以会随对话变长而变大。没有单独的消息列表键。
+
+
 ### 流式调用（AG-UI）
 
 `POST /api/chat/stream` 使用 [AG-UI](https://docs.ag-ui.com/concepts/events) 协议：请求体是标准的 `RunAgentInput`，响应是 `text/event-stream`，Agent 推理的同时就把 AG-UI 事件推送出来。用 `curl -N` 关闭缓冲：
