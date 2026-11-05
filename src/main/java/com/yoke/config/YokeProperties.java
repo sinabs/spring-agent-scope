@@ -4,8 +4,7 @@ import java.util.Optional;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -52,11 +51,10 @@ public record YokeProperties(
      * @param triggerMessages 对话消息达到这个条数就触发压缩
      * @param keepMessages    压缩后原样保留最近多少条
      */
+    @Slf4j
     public record Compaction(
             @DefaultValue("30") int triggerMessages,
             @DefaultValue("10") int keepMessages) {
-
-        private static final Logger log = LoggerFactory.getLogger(Compaction.class);
 
         public static final int DEFAULT_TRIGGER_MESSAGES = 30;
         public static final int DEFAULT_KEEP_MESSAGES = 10;
