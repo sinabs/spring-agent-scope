@@ -35,7 +35,7 @@ class ArchitectureTests {
 
     private static final DescribedPredicate<JavaClass> AGUI_OUTSIDE_CONFIG_ALLOWED_LIST = DescribedPredicate
             .and(resideInAPackage("io.agentscope.core.agui.."),
-                    DescribedPredicate.not(new DescribedPredicate<JavaClass>(
+                    DescribedPredicate.not(new DescribedPredicate<>(
                             "the config allowed types " + CONFIG_AGUI_ALLOWED) {
                         @Override
                         public boolean test(JavaClass input) {
@@ -45,7 +45,7 @@ class ArchitectureTests {
 
     private static final DescribedPredicate<JavaClass> FRAMEWORK_OUTSIDE_ALLOWED_LIST = DescribedPredicate
             .and(resideInAPackage("io.agentscope.."),
-                    DescribedPredicate.not(new DescribedPredicate<JavaClass>(
+                    DescribedPredicate.not(new DescribedPredicate<>(
                             "the controller allowed types " + CONTROLLER_ALLOWED) {
                         @Override
                         public boolean test(JavaClass input) {

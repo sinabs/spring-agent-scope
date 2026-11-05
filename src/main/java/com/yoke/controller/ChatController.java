@@ -58,7 +58,7 @@ public class ChatController implements ChatApi {
                                     agentFactory::create,
                                     agent -> aguiCodec.stream(agent, request, contextOf(DEFAULT_USER_ID, request.threadId())),
                                     HarnessAgent::close)
-                            .doOnNext(data -> started.set(true))
+                            .doOnNext(_ -> started.set(true))
                             .onErrorResume(error -> {
                                 log.warn("流式对话出错，threadId={}", request.threadId(), error);
                                 return aguiCodec.encodeError(request, error, started.get());

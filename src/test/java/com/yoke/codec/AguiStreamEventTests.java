@@ -123,9 +123,8 @@ class AguiStreamEventTests {
     void 编码结果没有前导空格且是单行() {
         List<String> events = run(new ScriptedModel(List.of(Flux.just(text("ok", null)))));
 
-        assertThat(events).allSatisfy(json -> {
-            assertThat(json).startsWith("{").doesNotContain("\n");
-        });
+        assertThat(events).allSatisfy(json ->
+                assertThat(json).startsWith("{").doesNotContain("\n"));
     }
 
     @Test

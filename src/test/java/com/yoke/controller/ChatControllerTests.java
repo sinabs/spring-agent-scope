@@ -259,7 +259,7 @@ class ChatControllerTests {
     @Test
     void 流式接口中途出错时推送RUN_ERROR并关闭Agent() {
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
-                .thenReturn(Flux.<AgentEvent>just(new AgentStartEvent("s-1", "r", "Yoke"),
+                .thenReturn(Flux.just(new AgentStartEvent("s-1", "r", "Yoke"),
                                 new TextBlockDeltaEvent("r", "text", "半"))
                         .concatWith(Flux.error(new IllegalStateException("模型不可用"))));
 

@@ -38,7 +38,7 @@ class YokeApplicationTests extends RedisIntegrationTest {
         HarnessAgentFactory factory = context.getBean(HarnessAgentFactory.class);
         LoggingMiddleware logging = context.getBean(LoggingMiddleware.class);
 
-        int sizes[] = new int[3];
+        int[] sizes = new int[3];
         for (int i = 0; i < sizes.length; i++) {
             try (HarnessAgent agent = factory.create()) {
                 var middlewares = agent.getDelegate().getMiddlewares();

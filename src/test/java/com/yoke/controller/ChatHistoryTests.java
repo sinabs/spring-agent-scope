@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -130,7 +131,7 @@ class ChatHistoryTests extends RedisIntegrationTest {
     void 模型抛错时真实Agent的流以RUN_ERROR收尾且没有RUN_FINISHED() {
         List<String> events = controller
                 .stream(AguiTestSupport.body(uniqueId("stream-err"), RecordingModel.FAIL_TRIGGER))
-                .map(event -> event.data()).collectList().block();
+                .map(ServerSentEvent::data).collectList().block();
 
         assertThat(AguiTestSupport.types(events)).doesNotContain("RUN_FINISHED");
         assertThat(AguiTestSupport.types(events).getLast()).isEqualTo("RUN_ERROR");

@@ -70,7 +70,7 @@ public class WeatherTool {
         this(GEOCODING_URL, FORECAST_URL);
     }
 
-    @Tool(name = "get_weather", readOnly = true, concurrencySafe = true,
+    @Tool(name = "get_weather", readOnly = true,
             description = "当用户问某个城市现在的天气、气温、冷不冷、要不要带伞时调用。"
                     + "模型自己不知道实时天气，不要凭印象回答。只返回当前实况，不含未来预报。"
                     + "找不到城市或服务不可用时会返回原因，请如实告诉用户。")

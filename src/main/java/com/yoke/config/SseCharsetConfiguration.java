@@ -2,6 +2,7 @@ package com.yoke.config;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.jspecify.annotations.NonNull;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
@@ -25,7 +26,8 @@ public class SseCharsetConfiguration implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new HandlerInterceptor() {
             @Override
-            public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+            public boolean preHandle(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
+                    @NonNull Object handler) {
                 response.setContentType(SSE_UTF8);
                 return true;
             }

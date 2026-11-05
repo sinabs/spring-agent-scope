@@ -62,7 +62,7 @@ class ToolPermissionTests extends RedisIntegrationTest {
 
         // 回复之后框架还会异步发起记忆整理之类不带工具的模型调用，所以取最后一次带工具的调用
         Set<String> exposed = model.receivedTools.stream().filter(tools -> !tools.isEmpty())
-                .reduce((first, second) -> second).map(TreeSet::new).orElseThrow();
+                .reduce((_, second) -> second).map(TreeSet::new).orElseThrow();
 
         assertThat(exposed).as("模型确实拿到了工具清单").isNotEmpty();
         assertThat(exposed).doesNotContainAnyElementsOf(FORBIDDEN);
@@ -72,7 +72,7 @@ class ToolPermissionTests extends RedisIntegrationTest {
     void 被关掉的工具恰好是不加限制时多出来的那一批(@TempDir Path workspace) {
         controller.chat(new ChatRequest("tools-" + UUID.randomUUID(), "你有哪些工具")).block();
         Set<String> exposed = model.receivedTools.stream().filter(tools -> !tools.isEmpty())
-                .reduce((first, second) -> second).map(TreeSet::new).orElseThrow();
+                .reduce((_, second) -> second).map(TreeSet::new).orElseThrow();
 
         Set<String> removed = toolsOfUnrestrictedAgent(workspace);
         removed.removeAll(exposed);
@@ -89,7 +89,7 @@ class ToolPermissionTests extends RedisIntegrationTest {
             controller.chat(new ChatRequest("weather-" + UUID.randomUUID(), "你有哪些工具")).block();
 
             Set<String> exposed = model.receivedTools.stream().filter(tools -> !tools.isEmpty())
-                    .reduce((first, second) -> second).map(TreeSet::new).orElseThrow();
+                    .reduce((_, second) -> second).map(TreeSet::new).orElseThrow();
             assertThat(exposed).contains("get_weather");
         }
     }

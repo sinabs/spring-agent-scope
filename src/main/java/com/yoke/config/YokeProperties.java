@@ -5,6 +5,7 @@ import java.util.Optional;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -37,7 +38,7 @@ public record YokeProperties(
 
         /** record 自动生成的 toString 会原样带出连接串，日志或调试输出里就泄漏密码，所以这里脱敏。 */
         @Override
-        public String toString() {
+        public @NonNull String toString() {
             return "Redis[uri=" + Optional.ofNullable(uri).map(RedisConfiguration::redact).orElse(null) + ", keyPrefix=" + keyPrefix + "]";
         }
     }

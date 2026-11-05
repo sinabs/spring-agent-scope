@@ -82,7 +82,7 @@ class WeatherToolTests {
         tool.getWeather("北京");
 
         assertThat(requests).hasSize(2);
-        assertThat(requests.get(0)).startsWith("name=%E5%8C%97%E4%BA%AC&count=1");
+        assertThat(requests.getFirst()).startsWith("name=%E5%8C%97%E4%BA%AC&count=1");
         assertThat(requests.get(1)).startsWith("latitude=39.9075&longitude=116.39723&current=");
     }
 
@@ -90,7 +90,7 @@ class WeatherToolTests {
     void 城市名里的特殊字符被转义不会注入额外参数() {
         tool.getWeather("a&b=c");
 
-        assertThat(requests.get(0)).startsWith("name=a%26b%3Dc&count=1");
+        assertThat(requests.getFirst()).startsWith("name=a%26b%3Dc&count=1");
     }
 
     @Test
