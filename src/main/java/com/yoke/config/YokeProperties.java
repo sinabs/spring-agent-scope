@@ -60,7 +60,8 @@ public record YokeProperties(
         public static final int DEFAULT_KEEP_MESSAGES = 10;
 
         public Compaction {
-            if (triggerMessages <= 0 || keepMessages <= 0 || keepMessages >= triggerMessages) {
+            // keepMessages > 0 且 keepMessages < triggerMessages 已经蕴含 triggerMessages > 0，所以不用单独判断触发条数
+            if (keepMessages <= 0 || keepMessages >= triggerMessages) {
                 log.warn("压缩配置不合法（trigger-messages={}, keep-messages={}），回落到默认值 {} / {}",
                         triggerMessages, keepMessages, DEFAULT_TRIGGER_MESSAGES, DEFAULT_KEEP_MESSAGES);
                 triggerMessages = DEFAULT_TRIGGER_MESSAGES;
