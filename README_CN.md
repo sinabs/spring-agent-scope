@@ -17,7 +17,14 @@
 
 > A Spring-based agent harness.
 
-Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke 则是套在模型外面、让它能稳定干活的那层运行框架。它把 AgentScope 的 Agent 能力包装成一个开箱即用的 HTTP 服务，让你专注于业务，而不是胶水代码：
+Yoke 是友客AI的开源项目：大家一起学习 AgentScope Java V2 和 Spring 的源码与用法，在实践中开发出一个真正能用的 Agent 服务。Yoke（轭）原指套在牛马身上、让它们朝着正确方向使劲的木架，Yoke 也是如此：它是套在模型外面、让模型稳定干活的那层运行框架，把 AgentScope 的 Agent 能力包装成开箱即用的 HTTP 服务。
+
+- 想用 AgentScope Java 做个 Agent 服务，Demo 十几行就能跑，可一到"要给用户用"，问题就来了：每个请求一个 Agent 还是全局一个？对话历史放哪？
+- 流式输出、工具调用、多轮会话、权限收紧，这些在官方文档里是分散的例子，拼到一个 Spring Boot 项目里，到底该怎么分层、守哪些边界？
+- 官方的 starter 能一行引入，可它的入口没有认证、Agent 是单例，直接上线会出什么事？哪些该用，哪些该自己写？
+- 这个项目从一个能对话的接口开始，一课加一层，每一课只解决一个工程问题，代码开源、可以直接运行，也会如实写下没验证的限制和踩过的坑。
+
+### 特性
 
 - 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，按 AG-UI 协议通过 SSE 边推理边推送。
 - 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 接口查询当前天气（无需密钥，免费版仅限非商业使用）。
@@ -26,7 +33,6 @@ Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke �
 - 通过 AgentScope 官方 starter 接入各种模型：OpenAI 兼容协议（可对接 DashScope、DeepSeek 等）、Anthropic、Gemini、Ollama，换依赖和配置即可。
 - local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
 - 默认开启虚拟线程，Tomcat 和 Spring 默认线程池都使用虚拟线程。
-- 请求参数校验，缺少 `message` 时返回 400。
 
 ## 快速开始
 

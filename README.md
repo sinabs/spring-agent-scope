@@ -17,7 +17,14 @@
 
 > A Spring-based agent harness.
 
-A yoke is the wooden frame that makes oxen and horses pull in the direction you want. Yoke does the same for models: it is the runtime layer wrapped around a model so it can do real work reliably. It turns AgentScope's agent capabilities into a ready-to-use HTTP service, so you can focus on your business logic instead of glue code:
+Yoke is an open-source project of 友客AI (YouKe AI): a community learning AgentScope Java V2 and the Spring source code and usage together, by building an agent service that really works. A yoke is the wooden frame that makes oxen and horses pull in the direction you want, and Yoke does the same for models: it is the runtime layer wrapped around a model so it can do real work reliably, turning AgentScope's agent capabilities into a ready-to-use HTTP service.
+
+- Using AgentScope Java to build an agent service: the demo runs in a dozen lines, but "ship it to users" raises real questions. One agent per request, or one global agent? Where does the conversation history live?
+- Streaming, tool calls, multi-turn sessions and tight permissions are scattered across the official examples. How do you put them into one Spring Boot project, how should it be layered, and which boundaries must hold?
+- The official starters are one line away, but their endpoints have no authentication and the agent is a singleton. What happens if you ship them as they are, and what should you use or write yourself?
+- This project starts from an endpoint that can hold a conversation and adds one layer per lesson, each solving one engineering problem. The code is open source and runnable, and the limits that were not verified and the pitfalls hit along the way are written down honestly.
+
+### Features
 
 - One endpoint for multi-turn conversations: `POST /api/chat`, plus `POST /api/chat/stream` that streams the reasoning process over SSE using the AG-UI protocol.
 - A built-in `get_weather` tool queries current weather through the open-source [Open-Meteo](https://open-meteo.com) API (no key needed; its free tier is for non-commercial use only).
@@ -26,7 +33,6 @@ A yoke is the wooden frame that makes oxen and horses pull in the direction you 
 - Models are plugged in through the official AgentScope starters: OpenAI-compatible APIs (works with DashScope, DeepSeek and others), Anthropic, Gemini and Ollama. Switching is a dependency and configuration change.
 - `local` / `test` / `prod` profiles. In production, a missing API key fails the startup instead of shipping with an empty key.
 - Virtual threads are enabled by default, for both Tomcat and Spring's default thread pool.
-- Request validation: a missing `message` returns 400.
 
 ## Getting Started
 
