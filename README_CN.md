@@ -69,7 +69,7 @@ curl -X POST localhost:8080/api/chat \
 
 | 键 | 类型 | 内容 |
 |---|---|---|
-| `yoke:session:{userId}/{sessionId}:agent_state` | String | 一份 JSON，是整个 Agent 状态。对话在它的 `context` 数组里（一条消息一项：`USER`、带 `tool_use` 的 `ASSISTANT`、带 `tool_result` 的 `TOOL` 等），旁边是 `summary`（压缩后的摘要落点）和几个空的上下文对象。两轮约 3.3 KB |
+| `yoke:session:{userId}/{sessionId}:agent_state` | String | 一份 JSON，是整个 Agent 状态。对话在它的 `context` 数组里（一条消息一项：`USER`、带 `tool_use` 的 `ASSISTANT`、带 `tool_result` 的 `TOOL` 等），旁边是 `summary` 字段和几个空的上下文对象。真实压缩实测里 `summary` 一直是空的，压缩摘要是放在 `context` 的第一条消息里。两轮约 3.3 KB |
 | `yoke:session:{userId}/{sessionId}:agent_state:ver` | String | 乐观并发用的版本号，每次保存递增 |
 | `yoke:session:{userId}/{sessionId}:_keys` | Set | 该会话下所有状态键的名字（这里只有 `agent_state`），删除整个会话时靠它 |
 
@@ -91,7 +91,7 @@ curl -N -X POST localhost:8080/api/chat/stream \
 - `Content-Type` 必须是 `application/json`，否则返回 415。这也挡住了跨站页面用不触发 CORS 预检的 `text/plain` 请求发起对话
 - `threadId` 就是会话 ID，必填：字母、数字、`_.-`，1~64 位，不能全是点。它与 `POST /api/chat` 的 `sessionId` 共用同一份历史（`default` 用户下；`RunAgentInput` 没有用户字段，流式接口固定以 `default` 用户运行）
 - `runId` 必填且不能为空白（`RunAgentInput` 要求非空）
-- `messages` 不能为空，每条消息都要有 `id` 和 `role`，最后一条必须是 `user` 消息且有非空白的纯文本（不支持多模态内容块）
+- `messages` 不能为空，每条消息都要有 `id` 和 `role`，最后一条必须是 `user` 消息且有非空白的纯文本。`content` 只能是字符串，内容块形式（全是文本块、带图片等）都会被拒绝
 - 对话历史由服务端保存，只采用**最后一条** `user` 消息；前面的消息、`tools`、`context`、`state`、`forwardedProps`、`resume` 都会被忽略，客户端不能借此给 Agent 加工具或改写历史。这条消息也只取文本：它的 `id`、`toolCalls`、`toolCallId` 不会进入历史，消息 ID 由服务端生成。适配器还配置了 `ToolMergeMode.AGENT_ONLY`，只会用服务端注册的工具
 
 示意输出（取值是编的，字段名来自桩模型的实际运行，较长的字段做了省略）。只发 `data:` 行，事件类型是 JSON 里的 `type` 字段，没有 SSE 的 `event:` 名：
@@ -166,7 +166,7 @@ Yoke 自己的配置使用 `yoke.*` 前缀：
 | `yoke.compaction.keep-messages` | 压缩后原样保留的最近条数，默认 10。小于等于 0，或保留条数不小于触发条数时，回落到默认值 |
 | `yoke.workspace` | `HarnessAgent` 的工作区，放本地文件（转存的消息、记忆），默认 `~/.yoke/workspace`；只在本机，副本之间不共享 |
 
-Agent 创建时不开放文件、命令和联网工具，并且整体关闭子 Agent：读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，开着子 Agent 就能让模型派生出能抓取任意 URL 的子 Agent。关闭后剩下的只有记忆和会话类工具（`memory_save` 只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制）、`load_skill_through_path` 和 `wait_async_results`。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
+Agent 创建时不开放文件、命令和联网工具，并且整体关闭子 Agent：读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，开着子 Agent 就能让模型派生出能抓取任意 URL 的子 Agent。读类的记忆和会话工具（`memory_get`、`memory_search`、`session_history`、`session_list`、`session_search`）也被拒绝：`memory_get` 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，`session_history` 把模型给的 ID 直接拼进路径，开着就能让模型读到别的用户的记忆和会话。剩下的只有 `get_weather`、`memory_save`（只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制）、`load_skill_through_path` 和 `wait_async_results`。工具配置是显式传入的，工作区里的 `tools.json` 不生效。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
 
 要换成其他模型，把 `build.gradle` 里的 `agentscope-openai-spring-boot-starter` 换成对应的 starter（dashscope、anthropic、gemini、ollama），并修改 `agentscope.model.provider`。
 
