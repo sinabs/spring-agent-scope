@@ -1,8 +1,8 @@
 package com.yoke.controller;
 
 import com.yoke.config.AguiConfiguration;
+import com.yoke.config.HarnessAgentFactory;
 import com.yoke.support.AguiTestSupport;
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -14,8 +14,10 @@ import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -53,14 +55,14 @@ class ChatControllerWebTests {
     MockMvc mvc;
 
     @MockitoBean
-    ReActAgent.Builder agentBuilder;
+    HarnessAgentFactory agentFactory;
 
     @MockitoBean
-    ReActAgent agent;
+    HarnessAgent agent;
 
     @BeforeEach
-    void 让Builder返回模拟的Agent() {
-        when(agentBuilder.build()).thenReturn(agent);
+    void 让工厂返回模拟的Agent() {
+        when(agentFactory.create()).thenReturn(agent);
     }
 
     @Test
@@ -82,6 +84,56 @@ class ChatControllerWebTests {
             mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)
                             .content("{\"message\":\"" + message + "\"}"))
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    void 请求体里的userId会传给Agent() throws Exception {
+        Msg reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("你好呀").build();
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply));
+
+        mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"alice\",\"sessionId\":\"s-1\",\"message\":\"你好\"}"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("alice");
+    }
+
+    @Test
+    void 非法的userId或sessionId返回400() throws Exception {
+        String[][] illegal = {
+                {"userId", "a/b"}, {"userId", ".."}, {"userId", "."}, {"userId", "含中文"},
+                {"userId", "x".repeat(65)}, {"userId", "a b"},
+                {"sessionId", "b/c"}, {"sessionId", ".."}, {"sessionId", "../etc"}, {"sessionId", "x".repeat(65)}};
+        for (String[] field : illegal) {
+            mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"" + field[0] + "\":\"" + field[1] + "\",\"message\":\"你好\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    void 流式接口同样拦截非法标识() throws Exception {
+        mvc.perform(post("/api/chat/stream").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"a/b\",\"message\":\"你好\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 合法标识和缺失_空白的标识都放行() throws Exception {
+        Msg reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("ok").build();
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply));
+
+        String[] bodies = {
+                "{\"userId\":\"Alice_1.x-y\",\"sessionId\":\"" + "s".repeat(64) + "\",\"message\":\"你好\"}",
+                "{\"userId\":\"..a\",\"message\":\"你好\"}",
+                "{\"userId\":\" \",\"sessionId\":\" \",\"message\":\"你好\"}",
+                "{\"message\":\"你好\"}"};
+        for (String body : bodies) {
+            mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isOk());
         }
     }
 
@@ -108,7 +160,7 @@ class ChatControllerWebTests {
                             .content("{\"sessionId\":\"" + sessionId + "\",\"message\":\"你好\"}"))
                     .andExpect(status().isBadRequest());
         }
-        verify(agentBuilder, never()).build();
+        verify(agentFactory, never()).create();
     }
 
     private static final String USER_HI = "[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"你好\"}]";
@@ -119,7 +171,7 @@ class ChatControllerWebTests {
         mvc.perform(post("/api/chat/stream").contentType(MediaType.TEXT_PLAIN)
                         .content(AguiTestSupport.body("s-1", "你好")))
                 .andExpect(status().isUnsupportedMediaType());
-        verify(agentBuilder, never()).build();
+        verify(agentFactory, never()).create();
     }
 
     @Test
@@ -137,7 +189,7 @@ class ChatControllerWebTests {
                     .andExpect(status().isBadRequest());
         }
         // 400 发生在建立流之前，不会创建 Agent
-        verify(agentBuilder, never()).build();
+        verify(agentFactory, never()).create();
     }
 
     private static Flux<AgentEvent> helloEvents() {

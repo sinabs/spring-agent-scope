@@ -17,21 +17,29 @@
 
 > A Spring-based agent harness.
 
-Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke 则是套在模型外面、让它能稳定干活的那层运行框架。它把 AgentScope 的 Agent 能力包装成一个开箱即用的 HTTP 服务，让你专注于业务，而不是胶水代码：
+Yoke 是友客AI的开源项目。大家一起读 AgentScope Java V2 和 Spring 的源码，边学边做，做出一个能真正跑起来的 Agent 服务。Yoke（轭）原指套在牛马身上、让它们朝一个方向使劲的木架。Yoke 套在模型外面，让它稳定干活。
+
+- 用 AgentScope Java 做 Agent，十几行代码就能跑通 Demo。真要给用户用，麻烦才开始：Agent 每个请求新建一个，还是全局共用一个？对话历史放哪？
+- 流式输出、工具调用、多轮会话、权限收紧，官方文档里都是零散的例子。拼进一个 Spring Boot 项目，怎么分层、哪些边界必须守住，只能自己摸索。
+- 官方 starter 一行就能引入，但它的入口没有认证，Agent 又是单例，原样上线，不同用户的会话会串在一起。哪些能用、哪些得自己写，这个项目会给出判断。
+- 项目从一个能对话的接口起步，每课只解决一个工程问题，代码开源、能直接运行。没验证过的限制和踩过的坑，也写在文章里。
+
+### 特性
 
 - 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，按 AG-UI 协议通过 SSE 边推理边推送。
-- 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 接口查询当前天气（无需密钥，免费版仅限非商业使用）。
-- 每次请求新建临时 Agent，用完即关闭；对话历史保存在共享的状态存储里，按会话隔离。
+- 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 查当前天气，免密钥（免费版仅限非商业使用）。
+- 每次请求新建一个临时 `HarnessAgent`，用完即关闭。对话历史存在 Redis 里，重启不丢，多个副本共享，按 `(userId, sessionId)` 隔离，对话过长时自动压缩。
+- 除 `get_weather` 外，Agent 没有其他工具：不开放文件、命令和联网，子 Agent 整体关闭。日志中间件为每次调用记录耗时轨迹。
 - 通过 AgentScope 官方 starter 接入各种模型：OpenAI 兼容协议（可对接 DashScope、DeepSeek 等）、Anthropic、Gemini、Ollama，换依赖和配置即可。
-- local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
+- 有 local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
 - 默认开启虚拟线程，Tomcat 和 Spring 默认线程池都使用虚拟线程。
-- 请求参数校验，缺少 `message` 时返回 400。
 
 ## 快速开始
 
-需要 JDK 25。
+需要 JDK 25 和 Docker（用于本地 Redis）。
 
 ```bash
+docker compose up -d            # 先启动 Redis；没有 Redis 应用无法启动
 sdk env                         # 切换到 JDK 25（使用 sdkman 时）
 export ARK_API_KEY=...          # local 环境接火山方舟（OpenAI 兼容协议）
 ./gradlew bootRun               # 默认激活 local 环境
@@ -44,7 +52,29 @@ curl -X POST localhost:8080/api/chat \
 # {"sessionId":"…","reply":"…"}
 ```
 
-后续请求带上返回的 `sessionId`，即可延续同一段对话；不同 `sessionId` 的对话历史互相隔离。自己传的 `sessionId` 要符合下面 `threadId` 的同一条规则（字母、数字、`_.-`，1~64 位，不能全是点），否则返回 400；空白视同未传。运行测试：`./gradlew build`。
+后续请求带上返回的 `sessionId`，即可延续同一段对话。运行测试：`./gradlew build`；需要真实 Redis 的测试会通过 Testcontainers 读取同一份 `docker-compose.yml` 拉起，Docker 不可用时会明确跳过并写明原因（`CI=true` 时改为失败）。
+
+### 会话
+
+对话历史按 `(userId, sessionId)` 存放。请求体里两者都是可选的（`{"userId": "alice", "sessionId": "s-1", "message": "你好"}`），服务端保证二者到达 Agent 时都有值：
+
+- 两个都传：用这一对
+- 只传 `sessionId`：归属 `default` 用户（与旧版客户端行为一致）
+- 只传 `userId`：为该用户新建一个会话，新的会话 ID 在响应里返回
+- 都不传：`default` 用户下新建会话
+
+不会把「只给其一」直接交给框架：AgentScope 2.0.4 里缺 `sessionId` 会落到以 Agent 名称命名的共享会话，缺 `userId` 会落到匿名用户，所有调用方的历史会混在一起。两个标识只能包含字母、数字、`_`、`.`、`-`，长度 1 到 64，且不能全是点（`.`、`..` 会被拒绝），否则返回 400。原因是框架把槽位拼成 `userId/sessionId`，允许 `/` 会让不同的一对撞到同一个槽位，`userId` 还会成为工作区的目录名。目前没有鉴权，`userId` 由调用方自报，不是身份校验。
+
+每个会话在 Redis 里存了什么（用真实模型实测：两轮对话，其中一轮调用了工具）：
+
+| 键 | 类型 | 内容 |
+|---|---|---|
+| `yoke:session:{userId}/{sessionId}:agent_state` | String | 一份 JSON，是整个 Agent 状态。对话在它的 `context` 数组里（一条消息一项：`USER`、带 `tool_use` 的 `ASSISTANT`、带 `tool_result` 的 `TOOL` 等），旁边是 `summary` 字段和几个空的上下文对象。真实压缩实测里 `summary` 一直是空的，压缩摘要是放在 `context` 的第一条消息里。两轮约 3.3 KB |
+| `yoke:session:{userId}/{sessionId}:agent_state:ver` | String | 乐观并发用的版本号，每次保存递增 |
+| `yoke:session:{userId}/{sessionId}:_keys` | Set | 该会话下所有状态键的名字（这里只有 `agent_state`），删除整个会话时靠它 |
+
+模型的 `thinking` 内容和每条消息的 token 用量也会一并存下；每一轮都是整份读出、整份写回，所以会随对话变长而变大。没有单独的消息列表键。
+
 
 ### 流式调用（AG-UI）
 
@@ -59,9 +89,9 @@ curl -N -X POST localhost:8080/api/chat/stream \
 请求规则（任何一条不满足，都会在建立流之前返回 400）：
 
 - `Content-Type` 必须是 `application/json`，否则返回 415。这也挡住了跨站页面用不触发 CORS 预检的 `text/plain` 请求发起对话
-- `threadId` 就是会话 ID，必填：字母、数字、`_.-`，1~64 位，不能全是点。它与 `POST /api/chat` 的 `sessionId` 共用同一份历史
+- `threadId` 就是会话 ID，必填：字母、数字、`_.-`，1~64 位，不能全是点。它与 `POST /api/chat` 的 `sessionId` 共用同一份历史（`default` 用户下；`RunAgentInput` 没有用户字段，流式接口固定以 `default` 用户运行）
 - `runId` 必填且不能为空白（`RunAgentInput` 要求非空）
-- `messages` 不能为空，每条消息都要有 `id` 和 `role`，最后一条必须是 `user` 消息且有非空白的纯文本（不支持多模态内容块）
+- `messages` 不能为空，每条消息都要有 `id` 和 `role`，最后一条必须是 `user` 消息且有非空白的纯文本。`content` 只能是字符串，内容块形式（全是文本块、带图片等）都会被拒绝
 - 对话历史由服务端保存，只采用**最后一条** `user` 消息；前面的消息、`tools`、`context`、`state`、`forwardedProps`、`resume` 都会被忽略，客户端不能借此给 Agent 加工具或改写历史。这条消息也只取文本：它的 `id`、`toolCalls`、`toolCallId` 不会进入历史，消息 ID 由服务端生成。适配器还配置了 `ToolMergeMode.AGENT_ONLY`，只会用服务端注册的工具
 
 示意输出（取值是编的，字段名来自桩模型的实际运行，较长的字段做了省略）。只发 `data:` 行，事件类型是 JSON 里的 `type` 字段，没有 SSE 的 `event:` 名：
@@ -105,18 +135,18 @@ data:{"type":"RUN_FINISHED","threadId":"demo","runId":"…"}
 > 流式接口原先的私有事件（`textDelta`、`toolCall`、`toolResult`、`hint`、`done`、`error`）和 `{"sessionId", "message"}` 请求体已经移除。流式接口现在只接受 `Content-Type: application/json`，不带 `Content-Type`、或者用 `text/plain`、`application/*+json` 的请求都会返回 415。`POST /api/chat` 的 `sessionId` 现在按 `threadId` 的同一条规则校验（以前 `user:42` 这类非空白值能通过，现在返回 400）；空白的 `sessionId` 仍然新建会话。
 
 > **注意**
-> 默认的内存状态存储只适合单进程，服务重启后历史会丢失；多副本部署时需要换成 Redis 或 JDBC 实现。同一会话的并发请求不会被串行化，请避免同时发送。
+> 同一会话的并发请求不会被串行化，请避免同时发送。`HarnessAgent.close()` 会在每个请求的清理回调里等待框架全局的异步写入静默（两处各最长 5 秒），请求之间因此耦合；尚未做并发压测。
 
 ## 配置
 
 配置按环境拆分，没有显式指定环境时默认激活 `local`；部署时用环境变量 `SPRING_PROFILES_ACTIVE=prod` 或命令行参数 `--spring.profiles.active=prod` 切换。
 
-- `application.yml`：各环境通用：模型、Agent、虚拟线程、日志格式
-- `application-local.yml`：本地开发：火山方舟的 `base-url` 与模型名写在文件里，密钥读环境变量 `ARK_API_KEY`（可为空），`com.yoke` 日志为 debug
-- `application-test.yml`：自动化测试：假密钥，不会真正调用模型
-- `application-prod.yml`：生产：密钥必须由环境变量提供，缺失则启动失败；优雅停机
+- `application.yml`：各环境通用：模型、Agent、虚拟线程、日志格式、工作区、键前缀和压缩配置
+- `application-local.yml`：本地开发：火山方舟的 `base-url` 与模型名写在文件里，密钥读环境变量 `ARK_API_KEY`（可为空），Redis 连 `redis://127.0.0.1:6379`（即 `docker-compose.yml` 里的那个），`com.yoke` 日志为 debug
+- `application-test.yml`：自动化测试：假密钥，不会真正调用模型；Redis 地址由测试注入
+- `application-prod.yml`：生产：密钥和 Redis 地址（`YOKE_REDIS_URI`）必须由环境变量提供，缺失则启动失败；优雅停机
 
-模型由 AgentScope 官方 starter 根据 `agentscope.*` 创建，Agent 由共享 Builder 每次请求新建（官方的单例 Agent 已关闭）：
+模型由 AgentScope 官方 starter 根据 `agentscope.*` 创建，`HarnessAgent` 由 `HarnessAgentFactory` 每次请求新建（官方的单例 Agent 已关闭）：
 
 | 配置 | 说明 |
 |---|---|
@@ -125,6 +155,18 @@ data:{"type":"RUN_FINISHED","threadId":"demo","runId":"…"}
 | `agentscope.openai.base-url` | 接入其他 OpenAI 兼容服务（DashScope、DeepSeek 等）时设置 |
 | `agentscope.agent.sys-prompt` | 系统提示词 |
 | `agentscope.agent.max-iters` | ReAct 最大迭代次数 |
+
+Yoke 自己的配置使用 `yoke.*` 前缀：
+
+| 配置 | 说明 |
+|---|---|
+| `yoke.redis.uri` | Redis 连接串。`prod` 下没有默认值（`YOKE_REDIS_URI`）；启动时连不上 Redis，应用直接启动失败 |
+| `yoke.redis.key-prefix` | 所有 Redis 键的前缀，默认 `yoke:` |
+| `yoke.compaction.trigger-messages` | 对话消息达到这个条数就压缩，默认 30 |
+| `yoke.compaction.keep-messages` | 压缩后原样保留的最近条数，默认 10。小于等于 0，或保留条数不小于触发条数时，回落到默认值 |
+| `yoke.workspace` | `HarnessAgent` 的工作区，放本地文件（转存的消息、记忆），默认 `~/.yoke/workspace`；只在本机，副本之间不共享 |
+
+Agent 创建时不开放文件、命令和联网工具，并且整体关闭子 Agent：读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，开着子 Agent 就能让模型派生出能抓取任意 URL 的子 Agent。读类的记忆和会话工具（`memory_get`、`memory_search`、`session_history`、`session_list`、`session_search`）也被拒绝：`memory_get` 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，`session_history` 把模型给的 ID 直接拼进路径，开着就能让模型读到别的用户的记忆和会话。剩下的只有 `get_weather`、`memory_save`（只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制）、`load_skill_through_path` 和 `wait_async_results`。工具配置是显式传入的，工作区里的 `tools.json` 不生效。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
 
 要换成其他模型，把 `build.gradle` 里的 `agentscope-openai-spring-boot-starter` 换成对应的 starter（dashscope、anthropic、gemini、ollama），并修改 `agentscope.model.provider`。
 
@@ -135,10 +177,12 @@ src/main/java/com/yoke/
 ├── YokeApplication.java        应用入口
 ├── api/                        HTTP 接口契约（ChatApi，路径、校验和文档都在这里）
 ├── codec/                      领域类型与框架类型之间的转换（MessageCodec、AguiStreamCodec、HintEventConverter）
-├── config/                     Agent 共享配置（Builder、状态存储、AG-UI 适配器）
+├── config/                     Agent、Redis 与 AG-UI 适配器配置（HarnessAgentFactory、YokeProperties）
 ├── controller/                 接口实现（ChatController）
+├── middleware/                 Agent 中间件（LoggingMiddleware）
 └── model/                      请求与响应对象（ChatRequest、ChatResponse）
 src/main/resources/             application.yml 及各环境配置
+docker-compose.yml              本地 Redis，集成测试也用它
 docs/brand/                     logo
 ```
 
@@ -149,7 +193,7 @@ docs/brand/                     logo
 
 ## 参与贡献
 
-欢迎提交 Issue 和 Pull Request。提交前请运行 `./gradlew build` 确保全部测试通过；代码注释使用中文。AgentScope 的类型不能泄漏到 `codec` 之外，`ArchitectureTests` 会检查这一点。
+欢迎提交 Issue 和 Pull Request。提交前请运行 `./gradlew build` 确保全部测试通过；代码注释使用中文。AgentScope 的消息和事件类型不能泄漏到 `codec` 之外（`middleware` 除外，它的钩子签名本身就要用这些类型），`ArchitectureTests` 会检查这一点。
 
 ## 许可证
 

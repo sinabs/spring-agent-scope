@@ -18,7 +18,7 @@ public class AguiConfiguration {
      * 适配器配置。Yoke 不做状态同步，也不输出思考过程；token 用量以 {@code CUSTOM token_usage} 事件输出；
      * 出错时只发 {@code RUN_ERROR}，不再补 {@code RUN_FINISHED}。
      *
-     * <p>{@code runTimeout} 保持默认：2.0.4 里这个配置只有 getter，适配器并没有读它，所以不要指望它能限制运行时长。
+     * <p>{@code runTimeout} 保持默认：AgentScope 里这个配置只有 getter，适配器并没有读它，所以不要指望它能限制运行时长。
      *
      * <p>工具只用服务端注册的（{@code AGENT_ONLY}）。codec 已经丢弃了客户端的 {@code tools}，这里再兜一层：
      * 默认的 {@code MERGE_EXTERNAL_PRIORITY} 下，一旦客户端工具被透传进来，就会盖掉同名的服务端工具。

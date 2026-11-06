@@ -1,0 +1,14 @@
+# 本地研发依赖：先执行 docker compose up -d，再启动应用（./gradlew bootRun）。
+# 集成测试（Testcontainers）读取的也是这同一份文件，所以改这里会同时影响本地和测试。
+services:
+  redis:
+    # 固定版本，不用 latest，避免不同机器拉到不同的 Redis
+    image: redis:7.4-alpine
+    ports:
+      # 宿主机端口默认 6379；被占用时可以 REDIS_PORT=6380 docker compose up -d，应用侧同步改 yoke.redis.uri
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15

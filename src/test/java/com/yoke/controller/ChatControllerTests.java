@@ -9,7 +9,7 @@ import com.yoke.config.AguiConfiguration;
 import com.yoke.support.AguiTestSupport;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
-import io.agentscope.core.ReActAgent;
+import com.yoke.config.HarnessAgentFactory;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -23,6 +23,7 @@ import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
@@ -36,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -43,14 +45,14 @@ import static org.mockito.Mockito.when;
 
 class ChatControllerTests {
 
-    private final ReActAgent agent = mock(ReActAgent.class);
-    private final ReActAgent.Builder agentBuilder = mock(ReActAgent.Builder.class);
+    private final HarnessAgent agent = mock(HarnessAgent.class);
+    private final HarnessAgentFactory agentFactory = mock(HarnessAgentFactory.class);
     private final AguiConfiguration aguiConfiguration = new AguiConfiguration();
-    private final ChatController controller = new ChatController(agentBuilder,
+    private final ChatController controller = new ChatController(agentFactory,
             aguiConfiguration.aguiStreamCodec(aguiConfiguration.aguiAdapterConfig()));
 
     ChatControllerTests() {
-        when(agentBuilder.build()).thenReturn(agent);
+        when(agentFactory.create()).thenReturn(agent);
     }
 
     private static Msg reply(String text) {
@@ -90,6 +92,52 @@ class ChatControllerTests {
         ChatResponse response = controller.chat(new ChatRequest("  ", "hi")).block();
 
         assertThat(response.sessionId()).isNotBlank().isNotEqualTo("  ");
+    }
+
+    @Test
+    void 不传用户时落在default用户下() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+
+        controller.chat(new ChatRequest("s-1", "hi")).block();
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("default");
+    }
+
+    @Test
+    void 带用户ID时使用该用户() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+
+        controller.chat(new ChatRequest("s-1", "hi", "alice")).block();
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("alice");
+        assertThat(context.getValue().getSessionId()).isEqualTo("s-1");
+    }
+
+    @Test
+    void 只给用户ID时为该用户新建会话而不是无会话() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+
+        ChatResponse response = controller.chat(new ChatRequest(null, "hi", "alice")).block();
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("alice");
+        assertThat(context.getValue().getSessionId()).isNotBlank().isEqualTo(response.sessionId());
+    }
+
+    @Test
+    void 用户ID为空白时回落到default用户() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+
+        controller.chat(new ChatRequest("s-1", "hi", "  ")).block();
+
+        ArgumentCaptor<RuntimeContext> context = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).call(anyList(), context.capture());
+        assertThat(context.getValue().getUserId()).isEqualTo("default");
     }
 
     @Test
@@ -188,7 +236,7 @@ class ChatControllerTests {
         assertThatThrownBy(() -> controller.stream("{\"threadId\":\"../x\",\"runId\":\"r-1\",\"messages\":[]}"))
                 .isInstanceOf(InvalidStreamRequestException.class);
 
-        verify(agentBuilder, never()).build();
+        verify(agentFactory, never()).create();
     }
 
     @Test
@@ -197,7 +245,7 @@ class ChatControllerTests {
 
         assertThatThrownBy(() -> controller.stream(body)).isInstanceOf(InvalidStreamRequestException.class);
 
-        verify(agentBuilder, never()).build();
+        verify(agentFactory, never()).create();
     }
 
     @Test
@@ -210,9 +258,30 @@ class ChatControllerTests {
     }
 
     @Test
+    void 流式接口正常结束后关闭Agent失败也不追加RUN_ERROR() {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
+        doThrow(new IllegalStateException("关闭失败")).when(agent).close();
+
+        List<String> events = streamData(AguiTestSupport.body("s-1", "hi"));
+
+        assertThat(AguiTestSupport.types(events).getLast()).isEqualTo("RUN_FINISHED");
+        assertThat(AguiTestSupport.types(events)).doesNotContain("RUN_ERROR");
+        verify(agent).close();
+    }
+
+    @Test
+    void 同步接口回复后关闭Agent失败也正常返回() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+        doThrow(new IllegalStateException("关闭失败")).when(agent).close();
+
+        assertThat(controller.chat(new ChatRequest("s-1", "hi")).block()).isEqualTo(new ChatResponse("s-1", "ok"));
+        verify(agent).close();
+    }
+
+    @Test
     void 流式接口中途出错时推送RUN_ERROR并关闭Agent() {
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
-                .thenReturn(Flux.<AgentEvent>just(new AgentStartEvent("s-1", "r", "Yoke"),
+                .thenReturn(Flux.just(new AgentStartEvent("s-1", "r", "Yoke"),
                                 new TextBlockDeltaEvent("r", "text", "半"))
                         .concatWith(Flux.error(new IllegalStateException("模型不可用"))));
 
@@ -226,7 +295,7 @@ class ChatControllerTests {
 
     @Test
     void 创建Agent失败时先补RUN_STARTED再以RUN_ERROR收尾() {
-        when(agentBuilder.build()).thenThrow(new IllegalStateException("装配失败"));
+        when(agentFactory.create()).thenThrow(new IllegalStateException("装配失败"));
 
         List<String> events = streamData(AguiTestSupport.body("s-1", "hi"));
 
@@ -245,7 +314,7 @@ class ChatControllerTests {
         when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
         Flux<ServerSentEvent<String>> stream = controller.stream(AguiTestSupport.body("s-1", "hi"));
         stream.blockLast();
-        when(agentBuilder.build()).thenThrow(new IllegalStateException("装配失败"));
+        when(agentFactory.create()).thenThrow(new IllegalStateException("装配失败"));
 
         List<String> events = stream.map(ServerSentEvent::data).collectList().block();
 

@@ -6,6 +6,11 @@ agentscope:
     base-url: https://ark.cn-beijing.volces.com/api/v3
     model-name: deepseek-v4-1-flash-260910
 
+yoke:
+  redis:
+    # 对应 docker-compose.yml 里的 Redis，本地研发先 docker compose up -d
+    uri: ${YOKE_REDIS_URI:redis://127.0.0.1:6379}
+
 logging:
   level:
     com.yoke: debug

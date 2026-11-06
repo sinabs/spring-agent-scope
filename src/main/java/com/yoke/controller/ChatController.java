@@ -8,10 +8,11 @@ import cn.hutool.core.util.StrUtil;
 import com.yoke.api.ChatApi;
 import com.yoke.codec.AguiStreamCodec;
 import com.yoke.codec.MessageCodec;
+import com.yoke.config.HarnessAgentFactory;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.HarnessAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -27,19 +28,22 @@ public class ChatController implements ChatApi {
 
     private static final String DEFAULT_USER_ID = "default";
 
-    private final ReActAgent.Builder agentBuilder;
+    private final HarnessAgentFactory agentFactory;
 
     private final AguiStreamCodec aguiCodec;
 
     @Override
     public Mono<ChatResponse> chat(ChatRequest request) {
+        String userId = resolveUserId(request);
         String sessionId = resolveSessionId(request);
 
+        // eager=false：回复先交给调用方再关闭 Agent，关闭失败只记日志，不把已经成功的对话变成 500
         return Mono.using(
-                agentBuilder::build,
-                agent -> agent.call(MessageCodec.toInput(request.message()), contextOf(sessionId))
+                agentFactory::create,
+                agent -> agent.call(MessageCodec.toInput(request.message()), contextOf(userId, sessionId))
                         .map(reply -> new ChatResponse(sessionId, MessageCodec.toText(reply))),
-                ReActAgent::close);
+                HarnessAgent::close,
+                false);
     }
 
     @Override
@@ -51,11 +55,16 @@ public class ChatController implements ChatApi {
                     // 记录是否已经发出过事件：没发出过（例如创建 Agent 失败）就要先补 RUN_STARTED。
                     // 放在 defer 里，每次订阅一份，重复订阅时不会沿用上一次的状态
                     AtomicBoolean started = new AtomicBoolean();
+                    // AG-UI 的请求体里没有用户标识，流式接口固定归属 default 用户
+                    // eager=false：先把完成或出错信号交给下游，再关闭 Agent；关闭时抛出的异常由 Reactor 记日志丢弃，
+                    // 不会变成 onError。否则正常发出 RUN_FINISHED 之后，下面的 onErrorResume 还会再补一个 RUN_ERROR，
+                    // 打破二者互斥的承诺
                     return Flux.using(
-                                    agentBuilder::build,
-                                    agent -> aguiCodec.stream(agent, request, contextOf(request.threadId())),
-                                    ReActAgent::close)
-                            .doOnNext(data -> started.set(true))
+                                    agentFactory::create,
+                                    agent -> aguiCodec.stream(agent, request, contextOf(DEFAULT_USER_ID, request.threadId())),
+                                    HarnessAgent::close,
+                                    false)
+                            .doOnNext(_ -> started.set(true))
                             .onErrorResume(error -> {
                                 log.warn("流式对话出错，threadId={}", request.threadId(), error);
                                 return aguiCodec.encodeError(request, error, started.get());
@@ -70,9 +79,15 @@ public class ChatController implements ChatApi {
                 .orElseGet(() -> UUID.randomUUID().toString());
     }
 
-    private static RuntimeContext contextOf(String sessionId) {
+    private static String resolveUserId(ChatRequest request) {
+        return Optional.ofNullable(request.userId())
+                .filter(StrUtil::isNotBlank)
+                .orElse(DEFAULT_USER_ID);
+    }
+
+    private static RuntimeContext contextOf(String userId, String sessionId) {
         return RuntimeContext.builder()
-                .userId(DEFAULT_USER_ID)
+                .userId(userId)
                 .sessionId(sessionId)
                 .build();
     }

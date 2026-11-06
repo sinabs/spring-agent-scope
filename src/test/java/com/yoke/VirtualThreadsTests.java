@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
+import com.yoke.support.RedisIntegrationTest;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-class VirtualThreadsTests {
+class VirtualThreadsTests extends RedisIntegrationTest {
 
     /** 仅测试使用：返回处理当前请求的线程是不是虚拟线程。 */
     @TestConfiguration(proxyBeanMethods = false)

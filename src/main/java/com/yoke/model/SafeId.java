@@ -15,18 +15,21 @@ import jakarta.validation.ConstraintValidatorContext;
 import jakarta.validation.Payload;
 
 /**
- * 会话 ID 的取值规则：字母、数字、{@code _.-}，1~64 位，不能全是点，避免被用来拼出别的会话的存储位置。
+ * 用户标识和会话标识的格式约束：1 到 64 个字母、数字、下划线、点、短横线，且不能全是点（排除 {@code .}、{@code ..}）。
  *
- * <p>作为校验注解使用时，null 和空白放行：同步接口的 {@code sessionId} 可以不传，缺省时由服务端新建会话。
+ * <p>框架把槽位拼成 {@code userId + "/" + sessionId}，允许斜杠会让 (a, "b/c") 与 ("a/b", c) 撞到同一个槽位；
+ * userId 还会成为工作区目录名，{@code ..} 会越出目录。
+ *
+ * <p>作为校验注解使用时，null 和空白放行：由服务端补默认值或新建会话。
  * 必填的入口（AG-UI 的 {@code threadId}）直接调用 {@link Validator#isSafe}。
  */
 @Documented
 @Constraint(validatedBy = SafeId.Validator.class)
-@Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.METHOD})
+@Target({ElementType.RECORD_COMPONENT, ElementType.FIELD, ElementType.PARAMETER, ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface SafeId {
 
-    String message() default "必须是 1~64 位的字母、数字或 _.-，且不能全是点";
+    String message() default "只能包含字母、数字、下划线、点和短横线，长度 1 到 64，且不能全是点";
 
     Class<?>[] groups() default {};
 

@@ -22,6 +22,14 @@ dependencies {
     implementation libs.spring.boot.starter.validation
     // 官方核心 starter：根据 agentscope.* 配置自动创建 ReActAgent
     implementation libs.agentscope.starter
+    // Harness 工程层：HarnessAgent 在 ReActAgent 之上补齐工作区、压缩、中间件等生产能力
+    implementation libs.agentscope.harness
+    // Redis 分布式存储（RedisDistributedStore，基于 Jedis）：会话历史放在进程之外，重启和多副本都能接上
+    implementation(libs.agentscope.redis) {
+        // 扩展同时带进 Redisson 和 Lettuce 两套客户端，Yoke 只用 Jedis，排除后体积更小，也避免 Lettuce 版本被 Boot 的 BOM 改写
+        exclude group: 'org.redisson'
+        exclude group: 'io.lettuce'
+    }
     // AG-UI 协议库：只要库本身（事件模型、适配器、编码器），不引官方的 agui starter（它的入口无认证、用单例 Agent）
     implementation libs.agentscope.agui
     // 模型 starter：这里选 OpenAI 兼容协议，改 base-url 即可接入 DashScope、DeepSeek 等；换模型只需替换这一行
@@ -39,6 +47,9 @@ dependencies {
     testImplementation libs.spring.boot.starter.webmvc.test
     // 用测试守住包之间的依赖边界（框架类型不外泄）
     testImplementation libs.archunit
+    // 用 docker-compose.yml 拉起真实 Redis 做集成测试
+    testImplementation libs.testcontainers
+    testImplementation libs.testcontainers.junit
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
