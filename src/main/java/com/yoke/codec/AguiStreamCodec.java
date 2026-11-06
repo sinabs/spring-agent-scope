@@ -14,6 +14,7 @@ import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.MessageContent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.util.JsonUtils;
 import lombok.AccessLevel;
@@ -68,6 +69,11 @@ public final class AguiStreamCodec {
         AguiMessage last = messages.getLast();
         if (Objects.isNull(last) || !last.isUserMessage()) {
             throw new InvalidStreamRequestException("messages 的最后一条必须是 user 消息");
+        }
+        // 内容块形式的 content（即使全是文本块）getTextContent 取不到文本，下面的空白检查本来就会拒绝，
+        // 这里提前拒绝只是为了给出准确的原因，而不是「没有文本」
+        if (last.getContent() instanceof MessageContent.Blocks) {
+            throw new InvalidStreamRequestException("content 目前只支持字符串，不支持内容块（包括图片、音频、视频、文档）");
         }
         if (StrUtil.isBlank(last.getTextContent())) {
             throw new InvalidStreamRequestException("最后一条 user 消息必须有非空白的文本内容");

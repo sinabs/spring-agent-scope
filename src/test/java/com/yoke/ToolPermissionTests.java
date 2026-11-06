@@ -48,13 +48,15 @@ class ToolPermissionTests extends RedisIntegrationTest {
     }
 
     /**
-     * 被关掉的工具：文件读写、命令执行、联网，以及子 Agent 相关的（子 Agent 不继承联网工具的关闭）。
+     * 被关掉的工具：文件读写、命令执行、联网，子 Agent 相关的（子 Agent 不继承联网工具的关闭），
+     * 以及读类的记忆和会话工具（能跨用户读数据，保留只写当前用户的 memory_save）。
      * 名字来自上面参照 Agent 的实测清单，由本类的第二个测试守着。
      */
     private static final Set<String> FORBIDDEN = Set.of(
             "read_file", "write_file", "edit_file", "list_files", "glob_files", "grep_files",
             "execute", "web_search", "web_fetch",
-            "agent_spawn", "agent_send", "agent_list", "task_cancel", "task_list", "task_output");
+            "agent_spawn", "agent_send", "agent_list", "task_cancel", "task_list", "task_output",
+            "memory_get", "memory_search", "session_history", "session_list", "session_search");
 
     @Test
     void 模型看不到文件_命令_联网和子Agent工具() {

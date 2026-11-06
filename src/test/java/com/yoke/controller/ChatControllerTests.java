@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -253,6 +254,27 @@ class ChatControllerTests {
 
         controller.stream(AguiTestSupport.body("s-1", "hi")).blockLast();
 
+        verify(agent).close();
+    }
+
+    @Test
+    void 流式接口正常结束后关闭Agent失败也不追加RUN_ERROR() {
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(frameworkEvents("ok"));
+        doThrow(new IllegalStateException("关闭失败")).when(agent).close();
+
+        List<String> events = streamData(AguiTestSupport.body("s-1", "hi"));
+
+        assertThat(AguiTestSupport.types(events).getLast()).isEqualTo("RUN_FINISHED");
+        assertThat(AguiTestSupport.types(events)).doesNotContain("RUN_ERROR");
+        verify(agent).close();
+    }
+
+    @Test
+    void 同步接口回复后关闭Agent失败也正常返回() {
+        when(agent.call(anyList(), any(RuntimeContext.class))).thenReturn(Mono.just(reply("ok")));
+        doThrow(new IllegalStateException("关闭失败")).when(agent).close();
+
+        assertThat(controller.chat(new ChatRequest("s-1", "hi")).block()).isEqualTo(new ChatResponse("s-1", "ok"));
         verify(agent).close();
     }
 

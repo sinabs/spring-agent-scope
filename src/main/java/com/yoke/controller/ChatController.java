@@ -37,11 +37,13 @@ public class ChatController implements ChatApi {
         String userId = resolveUserId(request);
         String sessionId = resolveSessionId(request);
 
+        // eager=false：回复先交给调用方再关闭 Agent，关闭失败只记日志，不把已经成功的对话变成 500
         return Mono.using(
                 agentFactory::create,
                 agent -> agent.call(MessageCodec.toInput(request.message()), contextOf(userId, sessionId))
                         .map(reply -> new ChatResponse(sessionId, MessageCodec.toText(reply))),
-                HarnessAgent::close);
+                HarnessAgent::close,
+                false);
     }
 
     @Override
@@ -54,10 +56,14 @@ public class ChatController implements ChatApi {
                     // 放在 defer 里，每次订阅一份，重复订阅时不会沿用上一次的状态
                     AtomicBoolean started = new AtomicBoolean();
                     // AG-UI 的请求体里没有用户标识，流式接口固定归属 default 用户
+                    // eager=false：先把完成或出错信号交给下游，再关闭 Agent；关闭时抛出的异常由 Reactor 记日志丢弃，
+                    // 不会变成 onError。否则正常发出 RUN_FINISHED 之后，下面的 onErrorResume 还会再补一个 RUN_ERROR，
+                    // 打破二者互斥的承诺
                     return Flux.using(
                                     agentFactory::create,
                                     agent -> aguiCodec.stream(agent, request, contextOf(DEFAULT_USER_ID, request.threadId())),
-                                    HarnessAgent::close)
+                                    HarnessAgent::close,
+                                    false)
                             .doOnNext(_ -> started.set(true))
                             .onErrorResume(error -> {
                                 log.warn("流式对话出错，threadId={}", request.threadId(), error);

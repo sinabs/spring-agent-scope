@@ -40,10 +40,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
  * <p>工具权限：Agent 不开放文件读写、命令执行和联网工具，也整体关闭了子 Agent。
  * 读 AgentScope 源码发现，子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，
  * 开着子 Agent 就能让模型通过 {@code agent_spawn} 派生出能联网的子 Agent，所以整体关闭。
- * 关闭后模型仍能用的只有 {@code memory_save}、{@code memory_get}、{@code memory_search}、{@code session_history}、
- * {@code session_list}、{@code session_search}、{@code load_skill_through_path} 和 {@code wait_async_results}：
- * 联网路径已经没有；{@code memory_save} 是唯一写盘的，只往工作区里固定的 {@code MEMORY.md} 和
+ * 读类的记忆和会话工具（{@code memory_get}、{@code memory_search}、{@code session_history}、{@code session_list}、
+ * {@code session_search}）也被拒绝：{@code memory_get} 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，
+ * {@code session_history} 把模型给的 ID 直接拼进路径，开着就能让模型读到别的用户的记忆和会话。
+ * 模型能用的只有 {@code get_weather}、{@code memory_save}、{@code load_skill_through_path} 和 {@code wait_async_results}：
+ * {@code memory_save} 是唯一写盘的，只往工作区里固定的 {@code MEMORY.md} 和
  * {@code memory/<日期>.md} 追加，路径不由模型控制，但追加的内容没有大小限制。
+ * 工具配置是显式传入的，工作区里的 {@code tools.json} 不生效。
+ *
+ * <p>Agent 在结果交给调用方之后才关闭，关闭时抛出的异常只记日志：不会把已经成功的对话变成 500，
+ * 流式接口也不会在 {@code RUN_FINISHED} 之后再追加 {@code RUN_ERROR}。
  *
  * <p>已知限制：{@code HarnessAgent.close()} 会等待框架里全局的异步写入静默
  * （{@code awaitMirrorQuiescence} 和 {@code awaitQuiescence}，各最长 5 秒），它在每个请求的清理回调里执行，
@@ -76,7 +82,7 @@ public interface ChatApi {
      * （否则返回 415，也避免跨站页面用不触发预检的 {@code text/plain} 请求发起对话）。这里以字符串接收，由实现解析和校验，
      * 所以契约里不出现框架类型。校验失败（请求体不是合法 JSON、{@code messages} 为空、最后一条不是 user 消息、
      * 最后一条 user 消息没有非空白的文本、{@code threadId} 缺失或不合规）都在建立流之前返回 400。
-     * 目前只支持纯文本的 {@code content}，多模态内容块不支持。
+     * {@code content} 目前只支持字符串，内容块形式（包括全是文本块、带图片等）返回 400。
      *
      * <p>{@code threadId} 就是会话 ID，同一个 {@code threadId} 共享对话历史，也与 {@link #chat} 的
      * {@code sessionId} 共用同一份历史。AG-UI 要求客户端自己生成 {@code threadId}，所以这里必填，

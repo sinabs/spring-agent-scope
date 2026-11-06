@@ -10,6 +10,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.tools.ToolsConfig;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 
@@ -85,7 +86,27 @@ public class HarnessAgentFactory {
                 // 子 Agent 只继承文件和 shell 的关闭，不继承 web 的关闭（AgentScope 的 HarnessAgentBuilderSupport 只传这两个），
                 // 开着就能让模型通过 agent_spawn 派生出带 web_fetch 的子 Agent 联网；第 03 轮专门引入子 Agent 时再按需打开
                 .disableSubagents()
+                // 显式传入工具配置，工作区里的 tools.json 就不再生效（它能增删工具、声明 stdio MCP 进程）
+                .toolsConfig(toolsConfig())
                 .build();
+    }
+
+    /**
+     * 工具黑名单，每次新建：{@link ToolsConfig} 是可变的 JavaBean，不在请求间共享。
+     *
+     * <ul>
+     *   <li>{@code web_fetch}、{@code web_search}：与 {@code disableWebTools()} 并用，任何一个都不要去掉；</li>
+     *   <li>读类的记忆和会话工具：{@code memory_get} 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，
+     *       {@code session_history} 把模型给的 agentId/sessionId 直接拼进路径，模型能借它们读到别的用户的记忆和会话；
+     *       {@code @SafeId} 只管 HTTP 入参，管不到模型传给工具的参数。{@code memory_search} 是否跨用户没有验证，一并拒绝。
+     *       保留 {@code memory_save}，它只往当前用户固定的记忆文件里追加，路径不由模型控制。</li>
+     * </ul>
+     */
+    private static ToolsConfig toolsConfig() {
+        ToolsConfig config = new ToolsConfig();
+        config.setDeny(List.of("web_fetch", "web_search",
+                "memory_get", "memory_search", "session_history", "session_list", "session_search"));
+        return config;
     }
 
     /**

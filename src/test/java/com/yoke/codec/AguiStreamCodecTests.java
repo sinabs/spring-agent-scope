@@ -3,7 +3,13 @@ package com.yoke.codec;
 import java.util.List;
 
 import com.yoke.config.AguiConfiguration;
+import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.ImageInputContent;
+import io.agentscope.core.agui.model.InputContent;
+import io.agentscope.core.agui.model.InputContentUrlSource;
+import io.agentscope.core.agui.model.TextInputContent;
 import io.agentscope.core.tool.ToolMergeMode;
+import io.agentscope.core.util.JsonUtils;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +34,25 @@ class AguiStreamCodecTests {
         assertThatThrownBy(() -> codec.parse(body))
                 .as(body)
                 .isInstanceOf(InvalidStreamRequestException.class);
+    }
+
+    /** 用库自己的序列化拼一条带内容块的 user 消息，不手写 JSON 格式。 */
+    private static String userBlocks(InputContent... parts) {
+        return "[" + JsonUtils.getJsonCodec().toJson(AguiMessage.userMessage("m1", List.of(parts))) + "]";
+    }
+
+    @Test
+    void 内容块形式的content被拒绝并说明原因() {
+        // 带图片的、全是文本块的都拒绝：只支持字符串形式的 content
+        for (String messages : new String[] {
+                userBlocks(new TextInputContent("这张图是什么"),
+                        new ImageInputContent(new InputContentUrlSource("https://example.com/a.png"), null)),
+                userBlocks(new TextInputContent("你好"), new TextInputContent("在吗"))}) {
+            assertThatThrownBy(() -> codec.parse(request("\"t-1\"", messages)))
+                    .as(messages)
+                    .isInstanceOf(InvalidStreamRequestException.class)
+                    .hasMessageContaining("内容块");
+        }
     }
 
     @Test
