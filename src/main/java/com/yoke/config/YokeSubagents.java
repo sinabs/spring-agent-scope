@@ -45,8 +45,15 @@ public final class YokeSubagents {
      */
     static final String NO_TOOLS = "__no_tools__";
 
-    /** 要对所有 Agent（含全部子 Agent）禁掉的联网工具。 */
-    static final List<String> DENIED_TOOLS = List.of("web_fetch", "web_search");
+    /**
+     * 要对所有 Agent（含全部子 Agent）禁掉的工具：联网工具，以及读类的记忆和会话工具。
+     * {@code memory_get} 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，{@code session_history}
+     * 把模型给的 agentId/sessionId 直接拼进路径，模型能借它们读到别的用户的记忆和会话；
+     * {@code @SafeId} 只管 HTTP 入参，管不到模型传给工具的参数。{@code memory_search} 是否跨用户没有验证，一并拒绝。
+     * 保留 {@code memory_save}，它只往当前用户固定的记忆文件里追加，路径不由模型控制。
+     */
+    static final List<String> DENIED_TOOLS = List.of("web_fetch", "web_search",
+            "memory_get", "memory_search", "session_history", "session_list", "session_search");
 
     /** 工作区里放子 Agent 声明文件的目录名，2.0.4 约定为 {@code <workspace>/subagents/}。 */
     static final String WORKSPACE_DIR = "subagents";

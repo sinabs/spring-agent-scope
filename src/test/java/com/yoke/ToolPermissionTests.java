@@ -51,32 +51,32 @@ class ToolPermissionTests extends RedisIntegrationTest {
     }
 
     /**
-     * 被关掉的工具：文件读写、命令执行、联网。
+     * 被关掉的工具：文件读写、命令执行、联网，以及读类的记忆和会话工具（能跨用户读数据，保留只写当前用户的 memory_save）。
      * 名字来自上面参照 Agent 的实测清单，由本类的第二个测试守着。
      */
     private static final Set<String> FORBIDDEN = Set.of(
             "read_file", "write_file", "edit_file", "list_files", "glob_files", "grep_files",
-            "execute", "web_search", "web_fetch");
+            "execute", "web_search", "web_fetch",
+            "memory_get", "memory_search", "session_history", "session_list", "session_search");
 
     /**
-     * 保留下来的框架内置工具，逐个写明（2.0.4 实测）：记忆、会话、技能加载、异步结果、子 Agent 和后台任务。
+     * 保留下来的框架内置工具，逐个写明（2.0.4 实测）：写记忆、技能加载、异步结果、子 Agent 和后台任务。
      * 写成字面量而不是从参照 Agent 推导，是为了让框架升级新增了任何内置工具时这里失败，逼着人来决定放不放行。
      */
     private static final Set<String> KEPT_BUILT_IN = Set.of(
-            "memory_save", "memory_get", "memory_search",
-            "session_history", "session_list", "session_search",
+            "memory_save",
             "load_skill_through_path", "wait_async_results",
             "agent_spawn", "agent_send", "agent_list",
             "task_output", "task_cancel", "task_list");
 
     /** Yoke 自己注册的工具；默认配置下没有 MCP 工具。 */
-    private static final Set<String> OWN_TOOLS = Set.of("get_current_time", "calculate", "list_my_notes", "retrieve");
+    private static final Set<String> OWN_TOOLS = Set.of("get_weather", "get_current_time", "calculate", "list_my_notes", "retrieve");
 
     private Set<String> exposedTools() {
         controller.chat(new ChatRequest("tools-" + UUID.randomUUID(), "你有哪些工具")).block();
         // 回复之后框架还会异步发起记忆整理之类不带工具的模型调用，所以取最后一次带工具的调用
         return model.receivedTools.stream().filter(tools -> !tools.isEmpty())
-                .reduce((first, second) -> second).map(TreeSet::new).orElseThrow();
+                .reduce((_, second) -> second).map(TreeSet::new).orElseThrow();
     }
 
     @Test
@@ -112,5 +112,18 @@ class ToolPermissionTests extends RedisIntegrationTest {
 
         // 框架以后新增了别的文件类工具时，这里会提醒我们把它也关掉
         assertThat(removed).isEqualTo(FORBIDDEN);
+    }
+
+    @Test
+    void 模型能看到天气工具且每次新建的Agent都带着它() {
+        // 连发两次：每个请求新建一个 Agent，共享的 Toolkit 重复使用也不能丢工具或重复注册
+        for (int i = 0; i < 2; i++) {
+            model.receivedTools.clear();
+            controller.chat(new ChatRequest("weather-" + UUID.randomUUID(), "你有哪些工具")).block();
+
+            Set<String> exposed = model.receivedTools.stream().filter(tools -> !tools.isEmpty())
+                    .reduce((_, second) -> second).map(TreeSet::new).orElseThrow();
+            assertThat(exposed).contains("get_weather");
+        }
     }
 }

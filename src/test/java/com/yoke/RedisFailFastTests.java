@@ -1,5 +1,7 @@
 package com.yoke;
 
+import java.util.Objects;
+
 import com.yoke.support.RedisCompose;
 import com.yoke.support.RequiresDocker;
 import org.junit.jupiter.api.Test;
@@ -60,7 +62,7 @@ class RedisFailFastTests {
 
     private static String rootMessages(Throwable error) {
         StringBuilder all = new StringBuilder();
-        for (Throwable t = error; t != null; t = t.getCause()) {
+        for (Throwable t = error; Objects.nonNull(t); t = t.getCause()) {
             all.append(t.getMessage()).append('\n');
         }
         return all.toString();

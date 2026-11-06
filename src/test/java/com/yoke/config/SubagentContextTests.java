@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.yoke.controller.ChatController;
 import com.yoke.model.ChatRequest;
+import com.yoke.support.AguiTestSupport;
 import com.yoke.support.ScriptedModel;
 import com.yoke.support.TestAgents;
 import com.yoke.tool.ChatTools;
@@ -33,7 +34,7 @@ class SubagentContextTests {
         });
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new ChatTools());
-        ChatController controller = new ChatController(TestAgents.factory(model, workspace, toolkit));
+        ChatController controller = AguiTestSupport.controller(TestAgents.factory(model, workspace, toolkit));
 
         controller.chat(new ChatRequest("sub-ctx", "让子 Agent 查我的笔记", "alice")).block();
 

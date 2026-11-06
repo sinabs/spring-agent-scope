@@ -6,9 +6,9 @@ import java.util.List;
 import java.util.Map;
 
 import com.yoke.controller.ChatController;
-import com.yoke.model.ChatEvent;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
+import com.yoke.support.AguiTestSupport;
 import com.yoke.support.McpTestServer;
 import com.yoke.support.ScriptedModel;
 import com.yoke.support.TestAgents;
@@ -18,13 +18,11 @@ import io.agentscope.core.tool.Toolkit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import org.springframework.http.codec.ServerSentEvent;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 带工具的完整一轮对话：模型（脚本）先决定调用工具，真实的 HarnessAgent ReAct 循环执行工具、把结果回填，
- * 模型再据此作答。控制器、EventCodec 都是真实的；不调用真实模型，也不需要 Redis。
+ * 模型再据此作答。控制器、AG-UI 适配器都是真实的；不调用真实模型，也不需要 Redis。
  */
 class ToolConversationTests {
 
@@ -47,39 +45,40 @@ class ToolConversationTests {
         });
     }
 
-    private static List<ChatEvent> stream(ChatController controller, ChatRequest request) {
-        return controller.stream(request).map(ServerSentEvent::data).collectList().block(Duration.ofSeconds(30));
+    private static List<Map<String, Object>> stream(ChatController controller, String threadId, String text) {
+        return AguiTestSupport.run(controller, threadId, text);
+    }
+
+    private static ChatController controller(ScriptedModel model, Path workspace, Toolkit toolkit) {
+        return AguiTestSupport.controller(TestAgents.factory(model, workspace, toolkit));
     }
 
     @Test
     void 流式对话里工具被真实执行_结果回填给模型_事件里有调用和结果(@TempDir Path workspace) {
         ScriptedModel model = script("calculate", Map.of("expression", "(1 + 2) * 4"));
-        ChatController controller = new ChatController(TestAgents.factory(model, workspace, template()));
+        ChatController controller = controller(model, workspace, template());
 
-        List<ChatEvent> events = stream(controller, new ChatRequest("s-calc", "帮我算 (1+2)*4"));
+        List<Map<String, Object>> events = stream(controller, "s-calc", "帮我算 (1+2)*4");
 
-        ChatEvent.ToolCall call = events.stream().filter(ChatEvent.ToolCall.class::isInstance)
-                .map(ChatEvent.ToolCall.class::cast).findFirst().orElseThrow();
-        ChatEvent.ToolResult result = events.stream().filter(ChatEvent.ToolResult.class::isInstance)
-                .map(ChatEvent.ToolResult.class::cast).findFirst().orElseThrow();
-        assertThat(call.name()).isEqualTo("calculate");
-        assertThat(call.arguments()).contains("(1 + 2) * 4");
-        assertThat(result.id()).isEqualTo(call.id());
-        assertThat(result.name()).isEqualTo("calculate");
-        assertThat(result.state()).isEqualTo("success");
-        assertThat(result.output()).contains("12");
-        // 事件顺序：先调用，后结果，最后以 done 结束
-        assertThat(events.indexOf(call)).isLessThan(events.indexOf(result));
-        assertThat(events.getLast()).isInstanceOf(ChatEvent.Done.class);
+        Map<String, Object> call = AguiTestSupport.first(events, "TOOL_CALL_START");
+        Map<String, Object> result = AguiTestSupport.first(events, "TOOL_CALL_RESULT");
+        assertThat(call.get("toolCallName")).isEqualTo("calculate");
+        assertThat(AguiTestSupport.toolArguments(events)).contains("(1 + 2) * 4");
+        assertThat(result.get("toolCallId")).isEqualTo(call.get("toolCallId"));
+        assertThat(String.valueOf(result.get("content"))).contains("12");
+        // 事件顺序：先调用，后结果，最后是 RUN_FINISHED（没有 done 事件，全文由客户端拼接）
+        List<String> types = events.stream().map(e -> (String) e.get("type")).toList();
+        assertThat(types.indexOf("TOOL_CALL_START")).isLessThan(types.indexOf("TOOL_CALL_RESULT"));
+        assertThat(types.getLast()).isEqualTo("RUN_FINISHED");
         // 结果真的回填给了模型：第二次调用的输入里带着工具结果，模型据此作答
-        assertThat(((ChatEvent.Done) events.getLast()).text()).contains("工具说：").contains("12");
+        assertThat(AguiTestSupport.text(events)).contains("工具说：").contains("12");
         assertThat(model.calls.stream().filter(c -> c.hasToolResult()).findFirst().orElseThrow().lastToolResultText()).contains("12");
     }
 
     @Test
     void 非流式对话同样走工具并拿到最终回复(@TempDir Path workspace) {
         ScriptedModel model = script("calculate", Map.of("expression", "1 / 0"));
-        ChatController controller = new ChatController(TestAgents.factory(model, workspace, template()));
+        ChatController controller = controller(model, workspace, template());
 
         ChatResponse response = controller.chat(new ChatRequest("s-err", "算 1/0")).block(Duration.ofSeconds(30));
 
@@ -91,13 +90,14 @@ class ToolConversationTests {
     void 请求里的userId经由RuntimeContext注入到工具_模型看不到也伪造不了(@TempDir Path workspace) {
         // 模型调用 list_my_notes 时还硬塞了一个 userId=default，试图读别人的笔记
         ScriptedModel model = script("list_my_notes", Map.of("limit", 5, "userId", "default"));
-        ChatController controller = new ChatController(TestAgents.factory(model, workspace, template()));
+        ChatController controller = controller(model, workspace, template());
 
-        List<ChatEvent> alice = stream(controller, new ChatRequest("s-a", "我的笔记", "alice"));
-        List<ChatEvent> fallback = stream(controller, new ChatRequest("s-d", "我的笔记"));
+        // 流式接口固定归属 default 用户，要指定 userId 只能走 /api/chat；脚本模型把工具结果原样放进回复
+        String alice = controller.chat(new ChatRequest("s-a", "我的笔记", "alice")).block(Duration.ofSeconds(30)).reply();
+        String fallback = controller.chat(new ChatRequest("s-d", "我的笔记")).block(Duration.ofSeconds(30)).reply();
 
-        assertThat(resultOf(alice)).contains("alice").contains("MCP").doesNotContain("Redis");
-        assertThat(resultOf(fallback)).contains("default").contains("Redis").doesNotContain("MCP");
+        assertThat(alice).contains("alice").contains("MCP").doesNotContain("Redis");
+        assertThat(fallback).contains("default").contains("Redis").doesNotContain("MCP");
     }
 
     @Test
@@ -107,9 +107,9 @@ class ToolConversationTests {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new RetrieveTool(port));
         ScriptedModel model = script("retrieve", Map.of("query", "对话历史存在哪里", "top_k", 2));
-        ChatController controller = new ChatController(TestAgents.factory(model, workspace, toolkit));
+        ChatController controller = controller(model, workspace, toolkit);
 
-        List<ChatEvent> events = stream(controller, new ChatRequest("s-r", "历史存哪"));
+        List<Map<String, Object>> events = stream(controller, "s-r", "历史存哪");
 
         String output = resultOf(events);
         assertThat(output).contains("[1] 来源：").contains("[2] 来源：").contains("Redis").doesNotContain("[3]");
@@ -123,9 +123,9 @@ class ToolConversationTests {
             Toolkit toolkit = template();
             mcp.registerInto(toolkit);
             ScriptedModel model = script("echo", Map.of("text", "你好 MCP"));
-            ChatController controller = new ChatController(TestAgents.factory(model, workspace, toolkit));
+            ChatController controller = controller(model, workspace, toolkit);
 
-            List<ChatEvent> events = stream(controller, new ChatRequest("s-mcp", "回显一下"));
+            List<Map<String, Object>> events = stream(controller, "s-mcp", "回显一下");
 
             // 模型看到的是原名 echo，没有 demo__ 之类的前缀
             assertThat(model.calls.getFirst().toolNames()).contains("echo").noneMatch(name -> name.contains("__") && name.contains("echo"));
@@ -144,11 +144,10 @@ class ToolConversationTests {
 
             // 主 Agent：清单里有 echo、没有 write_note；模型幻觉出对 write_note 的调用，只得到“工具不存在”的错误
             ScriptedModel parent = script("write_note", Map.of("text", "危险写入"));
-            List<ChatEvent> events = stream(new ChatController(TestAgents.factory(parent, workspace, toolkit)),
-                    new ChatRequest("s-hidden", "写一条笔记"));
+            List<Map<String, Object>> events = stream(controller(parent, workspace, toolkit), "s-hidden", "写一条笔记");
             assertThat(parent.calls.getFirst().toolNames()).contains("echo").doesNotContain("write_note");
             assertThat(server.writeNoteCalls).hasValue(0);
-            assertThat(events.getLast()).isInstanceOf(ChatEvent.Done.class);
+            assertThat(events.getLast().get("type")).isEqualTo("RUN_FINISHED");
 
             // 子 Agent（内置 general-purpose 继承父 Agent 的工具）：同样只有 echo
             ScriptedModel delegating = new ScriptedModel(call -> {
@@ -161,7 +160,7 @@ class ToolConversationTests {
                 }
                 return ScriptedModel.text("子回复");
             });
-            stream(new ChatController(TestAgents.factory(delegating, workspace, toolkit)), new ChatRequest("s-hidden-sub", "委派"));
+            stream(controller(delegating, workspace, toolkit), "s-hidden-sub", "委派");
             var subCalls = delegating.calls.stream()
                     .filter(c -> !c.systemText().startsWith("你是测试助手") && !c.systemText().startsWith("You are a memory")).toList();
             assertThat(subCalls).isNotEmpty();
@@ -170,8 +169,7 @@ class ToolConversationTests {
         }
     }
 
-    private static String resultOf(List<ChatEvent> events) {
-        return events.stream().filter(ChatEvent.ToolResult.class::isInstance).map(ChatEvent.ToolResult.class::cast)
-                .map(ChatEvent.ToolResult::output).findFirst().orElseThrow();
+    private static String resultOf(List<Map<String, Object>> events) {
+        return String.valueOf(AguiTestSupport.first(events, "TOOL_CALL_RESULT").get("content"));
     }
 }

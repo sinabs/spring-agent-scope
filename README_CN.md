@@ -17,15 +17,22 @@
 
 > A Spring-based agent harness.
 
-Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke 则是套在模型外面、让它能稳定干活的那层运行框架。它把 AgentScope 的 Agent 能力包装成一个开箱即用的 HTTP 服务，让你专注于业务，而不是胶水代码：
+Yoke 是友客AI的开源项目。大家一起读 AgentScope Java V2 和 Spring 的源码，边学边做，做出一个能真正跑起来的 Agent 服务。Yoke（轭）原指套在牛马身上、让它们朝一个方向使劲的木架。Yoke 套在模型外面，让它稳定干活。
 
-- 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，通过 SSE 边推理边推送。
-- 每次请求新建临时 `HarnessAgent`，用完即关闭；对话历史保存在 Redis 里，重启不丢、多副本共享，按 `(userId, sessionId)` 隔离，对话过长时自动压缩。
+- 用 AgentScope Java 做 Agent，十几行代码就能跑通 Demo。真要给用户用，麻烦才开始：Agent 每个请求新建一个，还是全局共用一个？对话历史放哪？
+- 流式输出、工具调用、多轮会话、权限收紧，官方文档里都是零散的例子。拼进一个 Spring Boot 项目，怎么分层、哪些边界必须守住，只能自己摸索。
+- 官方 starter 一行就能引入，但它的入口没有认证，Agent 又是单例，原样上线，不同用户的会话会串在一起。哪些能用、哪些得自己写，这个项目会给出判断。
+- 项目从一个能对话的接口起步，每课只解决一个工程问题，代码开源、能直接运行。没验证过的限制和踩过的坑，也写在文章里。
+
+### 特性
+
+- 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，按 AG-UI 协议通过 SSE 边推理边推送。
+- 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 查当前天气，免密钥（免费版仅限非商业使用）。
+- 每次请求新建一个临时 `HarnessAgent`，用完即关闭。对话历史存在 Redis 里，重启不丢，多个副本共享，按 `(userId, sessionId)` 隔离，对话过长时自动压缩。
 - 工具、知识库与子 Agent：计算器、时钟、按用户隔离的笔记工具，基于内置知识库的 `retrieve` 工具（返回带 `[1][2]` 编号的引用），通过 HTTP 接入外部 MCP 服务，以及两个子 Agent（一个在代码里声明，一个由工作区 Markdown 文件声明）。Agent 仍不开放文件、命令和联网工具，日志中间件为每次调用记录耗时轨迹。
 - 通过 AgentScope 官方 starter 接入各种模型：OpenAI 兼容协议（可对接 DashScope、DeepSeek 等）、Anthropic、Gemini、Ollama，换依赖和配置即可。
-- local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
+- 有 local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
 - 默认开启虚拟线程，Tomcat 和 Spring 默认线程池都使用虚拟线程。
-- 请求参数校验，缺少 `message` 时返回 400。
 
 ## 快速开始
 
@@ -34,7 +41,7 @@ Yoke（轭）是套在牛马身上、让它们听使唤拉车的木架；Yoke �
 ```bash
 docker compose up -d            # 先启动 Redis；没有 Redis 应用无法启动
 sdk env                         # 切换到 JDK 25（使用 sdkman 时）
-export OPENAI_API_KEY=sk-...
+export ARK_API_KEY=...          # local 环境接火山方舟（OpenAI 兼容协议）
 ./gradlew bootRun               # 默认激活 local 环境
 ```
 
@@ -58,48 +65,74 @@ curl -X POST localhost:8080/api/chat \
 
 不会把「只给其一」直接交给框架：AgentScope 2.0.4 里缺 `sessionId` 会落到以 Agent 名称命名的共享会话，缺 `userId` 会落到匿名用户，所有调用方的历史会混在一起。两个标识只能包含字母、数字、`_`、`.`、`-`，长度 1 到 64，且不能全是点（`.`、`..` 会被拒绝），否则返回 400。原因是框架把槽位拼成 `userId/sessionId`，允许 `/` 会让不同的一对撞到同一个槽位，`userId` 还会成为工作区的目录名。目前没有鉴权，`userId` 由调用方自报，不是身份校验。
 
-### 流式调用
+每个会话在 Redis 里存了什么（用真实模型实测：两轮对话，其中一轮调用了工具）：
 
-`POST /api/chat/stream` 的请求体与上面相同，Agent 推理的同时就把事件推送出来（`text/event-stream`）。用 `curl -N` 关闭缓冲：
+| 键 | 类型 | 内容 |
+|---|---|---|
+| `yoke:session:{userId}/{sessionId}:agent_state` | String | 一份 JSON，是整个 Agent 状态。对话在它的 `context` 数组里（一条消息一项：`USER`、带 `tool_use` 的 `ASSISTANT`、带 `tool_result` 的 `TOOL` 等），旁边是 `summary` 字段和几个空的上下文对象。真实压缩实测里 `summary` 一直是空的，压缩摘要是放在 `context` 的第一条消息里。两轮约 3.3 KB |
+| `yoke:session:{userId}/{sessionId}:agent_state:ver` | String | 乐观并发用的版本号，每次保存递增 |
+| `yoke:session:{userId}/{sessionId}:_keys` | Set | 该会话下所有状态键的名字（这里只有 `agent_state`），删除整个会话时靠它 |
+
+模型的 `thinking` 内容和每条消息的 token 用量也会一并存下；每一轮都是整份读出、整份写回，所以会随对话变长而变大。没有单独的消息列表键。
+
+
+### 流式调用（AG-UI）
+
+`POST /api/chat/stream` 使用 [AG-UI](https://docs.ag-ui.com/concepts/events) 协议：请求体是标准的 `RunAgentInput`，响应是 `text/event-stream`，Agent 推理的同时就把 AG-UI 事件推送出来。用 `curl -N` 关闭缓冲：
 
 ```bash
 curl -N -X POST localhost:8080/api/chat/stream \
   -H 'Content-Type: application/json' \
-  -d '{"sessionId": "demo", "message": "北京天气怎么样"}'
+  -d '{"threadId": "demo", "runId": "run-1", "messages": [{"id": "msg-1", "role": "user", "content": "北京天气怎么样"}]}'
 ```
 
-示意输出（来自桩模型）：
+请求规则（任何一条不满足，都会在建立流之前返回 400）：
+
+- `Content-Type` 必须是 `application/json`，否则返回 415。这也挡住了跨站页面用不触发 CORS 预检的 `text/plain` 请求发起对话
+- `threadId` 就是会话 ID，必填：字母、数字、`_.-`，1~64 位，不能全是点。它与 `POST /api/chat` 的 `sessionId` 共用同一份历史（`default` 用户下；`RunAgentInput` 没有用户字段，流式接口固定以 `default` 用户运行）
+- `runId` 必填且不能为空白（`RunAgentInput` 要求非空）
+- `messages` 不能为空，每条消息都要有 `id` 和 `role`，最后一条必须是 `user` 消息且有非空白的纯文本。`content` 只能是字符串，内容块形式（全是文本块、带图片等）都会被拒绝
+- 对话历史由服务端保存，只采用**最后一条** `user` 消息；前面的消息、`tools`、`context`、`state`、`forwardedProps`、`resume` 都会被忽略，客户端不能借此给 Agent 加工具或改写历史。这条消息也只取文本：它的 `id`、`toolCalls`、`toolCallId` 不会进入历史，消息 ID 由服务端生成。适配器还配置了 `ToolMergeMode.AGENT_ONLY`，只会用服务端注册的工具
+
+示意输出（取值是编的，字段名来自桩模型的实际运行，较长的字段做了省略）。只发 `data:` 行，事件类型是 JSON 里的 `type` 字段，没有 SSE 的 `event:` 名：
 
 ```
-event:textDelta
-data:{"text":"我来查一下天气。"}
+data:{"type":"RUN_STARTED","threadId":"demo","runId":"…","input":{…}}
 
-event:toolCall
-data:{"id":"call_1","name":"get_weather","arguments":"{\"city\":\"北京\"}"}
+data:{"type":"TOOL_CALL_START","threadId":"demo","runId":"…","toolCallId":"call_1","toolCallName":"get_weather"}
 
-event:toolResult
-data:{"id":"call_1","name":"get_weather","state":"success","output":"\"晴，25 度（北京）\""}
+data:{"type":"TOOL_CALL_ARGS","threadId":"demo","runId":"…","toolCallId":"call_1","delta":"{\"city\":\"北京\"}"}
 
-event:textDelta
-data:{"text":"北京今天"}
+data:{"type":"TOOL_CALL_END","threadId":"demo","runId":"…","toolCallId":"call_1"}
 
-event:textDelta
-data:{"text":"晴，25 度。"}
+data:{"type":"TOOL_CALL_RESULT","threadId":"demo","runId":"…","toolCallId":"call_1","content":"\"晴，25 度（北京）\"","role":"tool","messageId":"…"}
 
-event:done
-data:{"sessionId":"demo","text":"北京今天晴，25 度。","usage":{"inputTokens":83,"outputTokens":27,"totalTokens":110}}
+data:{"type":"TEXT_MESSAGE_START","threadId":"demo","runId":"…","messageId":"…","role":"assistant"}
+
+data:{"type":"TEXT_MESSAGE_CONTENT","threadId":"demo","runId":"…","messageId":"…","delta":"北京今天晴，25 度。"}
+
+data:{"type":"TEXT_MESSAGE_END","threadId":"demo","runId":"…","messageId":"…"}
+
+data:{"type":"CUSTOM","threadId":"demo","runId":"…","name":"token_usage","value":{"delta":{…},"cumulative":{"inputTokens":83,"outputTokens":27,…},"modelCall":{…}}}
+
+data:{"type":"RUN_FINISHED","threadId":"demo","runId":"…"}
 ```
 
-事件名是一个封闭集合：
+| 事件 `type` | 含义 |
+|---|---|
+| `RUN_STARTED` | 总是第一个事件，带 `threadId` 和 `runId` |
+| `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_END` | 模型生成的文本；按顺序拼接 `CONTENT` 事件的 `delta` 即得到回复 |
+| `TOOL_CALL_START` / `TOOL_CALL_ARGS` / `TOOL_CALL_END` | 模型决定调用的工具；`TOOL_CALL_ARGS` 的 `delta` 是入参 JSON 的片段，只有模型分片返回入参时才会出现 |
+| `TOOL_CALL_RESULT` | 工具的执行结果，通过 `toolCallId` 与调用对应 |
+| `CUSTOM`，`name` 为 `token_usage` | 每次模型调用结束后的 token 用量，含 `delta` 和 `cumulative` |
+| `CUSTOM`，`name` 为 `hint` | 框架在推理过程中追加的提示，`value` 里有 `source` 和 `text` |
+| `RUN_FINISHED` | 正常结束 |
+| `RUN_ERROR` | 推理出错；HTTP 状态码仍是 200，流正常结束而不是断开连接。message 是原样的异常信息，未做脱敏，不要直接展示给终端用户 |
 
-- `textDelta`：模型生成的一段文本增量，按顺序拼接即得到回复
-- `toolCall`：模型决定调用的工具，名称和入参已经攒齐
-- `toolResult`：工具的执行结果，通过 `id` 与 `toolCall` 对应
-- `hint`：框架在推理过程中追加的提示
-- `done`：正常结束，带完整回复、`sessionId`（没传时由服务端生成）和累计 token 用量
-- `error`：推理出错；HTTP 状态码仍是 200，流正常结束而不是断开连接。message 是原样的异常信息，未做脱敏，不要直接展示给终端用户
+每次流都以 `RUN_STARTED` 开头（创建 Agent 失败时也一样），以 `RUN_FINISHED` 或 `RUN_ERROR` 结尾，二者不会同时出现。Agent 运行中出错时，`RUN_ERROR` 的 `code` 由 AG-UI 适配器按异常类型映射（`TIMEOUT_ERROR`、`INTERRUPTED_ERROR`、`INVALID_INPUT_ERROR` 或 `INTERNAL_ERROR`）；适配器之外的失败（例如创建 Agent 失败）一律是 `INTERNAL_ERROR`。没有 `done` 事件，也不重复最终全文：由客户端拼接 `TEXT_MESSAGE_CONTENT`。流正常结束、出错或客户端断开时，临时 Agent 都会被关闭。适配器的 `runTimeout` 配置在 AgentScope 2.0.4 里没有被读取，所以它不能限制运行时长。
 
-每次流都以 `done` 或 `error` 结尾。`message` 为空白时在建立流之前就返回 400。流正常结束、出错或客户端断开时，临时 Agent 都会被关闭。
+> **不兼容变更**
+> 流式接口原先的私有事件（`textDelta`、`toolCall`、`toolResult`、`hint`、`done`、`error`）和 `{"sessionId", "message"}` 请求体已经移除。流式接口现在只接受 `Content-Type: application/json`，不带 `Content-Type`、或者用 `text/plain`、`application/*+json` 的请求都会返回 415。`POST /api/chat` 的 `sessionId` 现在按 `threadId` 的同一条规则校验（以前 `user:42` 这类非空白值能通过，现在返回 400）；空白的 `sessionId` 仍然新建会话。
 
 > **注意**
 > 同一会话的并发请求不会被串行化，请避免同时发送。`HarnessAgent.close()` 会在每个请求的清理回调里等待框架全局的异步写入静默（两处各最长 5 秒），请求之间因此耦合；尚未做并发压测。
@@ -109,7 +142,7 @@ data:{"sessionId":"demo","text":"北京今天晴，25 度。","usage":{"inputTok
 配置按环境拆分，没有显式指定环境时默认激活 `local`；部署时用环境变量 `SPRING_PROFILES_ACTIVE=prod` 或命令行参数 `--spring.profiles.active=prod` 切换。
 
 - `application.yml`：各环境通用：模型、Agent、虚拟线程、日志格式、工作区、键前缀、压缩、知识库向量化配置和（注释形式的）MCP 示例
-- `application-local.yml`：本地开发：各密钥读环境变量（可为空），Redis 连 `redis://127.0.0.1:6379`（即 `docker-compose.yml` 里的那个），`com.yoke` 日志为 debug
+- `application-local.yml`：本地开发：火山方舟的 `base-url` 与模型名写在文件里，密钥读环境变量 `ARK_API_KEY`（可为空），Redis 连 `redis://127.0.0.1:6379`（即 `docker-compose.yml` 里的那个），`com.yoke` 日志为 debug
 - `application-test.yml`：自动化测试：假密钥，不会真正调用模型；Redis 地址由测试注入
 - `application-prod.yml`：生产：密钥和 Redis 地址（`YOKE_REDIS_URI`）必须由环境变量提供，缺失则启动失败；优雅停机
 
@@ -117,7 +150,7 @@ data:{"sessionId":"demo","text":"北京今天晴，25 度。","usage":{"inputTok
 
 | 配置 | 说明 |
 |---|---|
-| `agentscope.openai.api-key` | 模型密钥，来自环境变量 `OPENAI_API_KEY` |
+| `agentscope.openai.api-key` | 模型密钥；`local` 读 `ARK_API_KEY`，`prod` 读 `OPENAI_API_KEY` |
 | `agentscope.openai.model-name` | 模型名称 |
 | `agentscope.openai.base-url` | 接入其他 OpenAI 兼容服务（DashScope、DeepSeek 等）时设置 |
 | `agentscope.agent.sys-prompt` | 系统提示词 |
@@ -135,7 +168,7 @@ Yoke 自己的配置使用 `yoke.*` 前缀：
 | `yoke.knowledge.embedding.model-name` / `api-key` / `base-url` / `dimensions` | 可选的向量化服务（OpenAI 兼容的 `/embeddings`），用于向量检索。`model-name` 和 `api-key`（`YOKE_EMBEDDING_API_KEY`）都有值才启用向量检索，否则只用关键词检索；运行中向量化服务出错时自动退回关键词检索 |
 | `yoke.mcp.servers[]` | 外部 MCP 服务，默认一个也不接。每项有 `name`、`transport`（只能是 `sse` 或 `streamable-http`）、`url`、`timeout`（默认 30 秒）和可选的 `headers`。配置 `stdio` 会让应用启动失败；服务连不上同样启动失败 |
 
-Agent 创建时不开放文件、命令和联网工具。读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，所以联网工具除了主 Agent 的 `disableWebTools()`，还用 `ToolsConfig` 的 deny 名单禁掉，它同时作用于主 Agent、内置的 `general-purpose` 子 Agent 和所有声明的子 Agent。显式传入 `ToolsConfig` 还会让 2.0.4 不再去读工作区里的 `tools.json`（那个文件可以声明 `stdio` MCP 服务，也就是在宿主机上启动进程）。模型看到的工具恰好是：Yoke 自己的（`get_current_time`、`calculate`、`list_my_notes`、`retrieve`），框架的记忆、会话、技能加载、异步结果、子 Agent 和后台任务类工具（`memory_save` 只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制），再加上所配置的 MCP 服务公布的工具。`ToolPermissionTests` 用精确集合断言这份清单，框架升级新增了工具会让构建失败。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
+Agent 创建时不开放文件、命令和联网工具。读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，所以联网工具除了主 Agent 的 `disableWebTools()`，还用 `ToolsConfig` 的 deny 名单禁掉，它同时作用于主 Agent、内置的 `general-purpose` 子 Agent 和所有声明的子 Agent。显式传入 `ToolsConfig` 还会让 2.0.4 不再去读工作区里的 `tools.json`（那个文件可以声明 `stdio` MCP 服务，也就是在宿主机上启动进程）。读类的记忆和会话工具（`memory_get`、`memory_search`、`session_history`、`session_list`、`session_search`）也被同一份 deny 名单拒绝：`memory_get` 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，`session_history` 把模型给的 ID 直接拼进路径，开着就能让模型读到别的用户的记忆和会话。模型看到的工具恰好是：Yoke 自己的（`get_weather`、`get_current_time`、`calculate`、`list_my_notes`、`retrieve`），框架的写记忆、技能加载、异步结果、子 Agent 和后台任务类工具（`memory_save` 只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制），再加上所配置的 MCP 服务公布的工具。`ToolPermissionTests` 用精确集合断言这份清单，框架升级新增了工具会让构建失败。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
 
 ## 工具、知识库与子 Agent
 
@@ -166,14 +199,14 @@ Agent 创建时不开放文件、命令和联网工具。读 2.0.4 源码发现�
 src/main/java/com/yoke/
 ├── YokeApplication.java        应用入口
 ├── api/                        HTTP 接口契约（ChatApi，路径、校验和文档都在这里）
-├── codec/                      领域类型与框架类型之间的转换（MessageCodec、EventCodec）
-├── config/                     Agent、Redis、工具、知识库与子 Agent 配置（HarnessAgentFactory、YokeProperties、YokeSubagents）
+├── codec/                      领域类型与框架类型之间的转换（MessageCodec、AguiStreamCodec、HintEventConverter）
+├── config/                     Agent、Redis、AG-UI 适配器、工具、知识库与子 Agent 配置（HarnessAgentFactory、YokeProperties、YokeSubagents）
 ├── controller/                 接口实现（ChatController）
 ├── knowledge/                  检索端口及实现：关键词、向量、RRF 融合（不含框架类型）
 ├── mcp/                        到外部 MCP 服务的连接（只支持 HTTP 传输）
 ├── middleware/                 Agent 中间件（LoggingMiddleware）
-├── model/                      请求、响应与流式事件对象（ChatRequest、ChatResponse、ChatEvent）
-└── tool/                       暴露给模型的工具（ChatTools、RetrieveTool、UserContext）
+├── model/                      请求与响应对象（ChatRequest、ChatResponse）
+└── tool/                       暴露给模型的工具（WeatherTool、ChatTools、RetrieveTool、UserContext）
 src/main/resources/             application.yml、各环境配置、knowledge/*.md 和 workspace/subagents/*.md
 docker-compose.yml              本地 Redis，集成测试也用它
 docs/brand/                     logo

@@ -5,6 +5,7 @@ import com.yoke.config.ToolConfiguration;
 import com.yoke.config.SharedToolkit;
 import com.yoke.config.YokeProperties;
 import com.yoke.support.McpTestServer;
+import com.yoke.tool.WeatherTool;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -19,7 +20,7 @@ class McpStartupTests {
 
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(YokeProperties.class)
-    @Import({ToolConfiguration.class, KnowledgeConfiguration.class})
+    @Import({ToolConfiguration.class, KnowledgeConfiguration.class, WeatherTool.class})
     static class Context {
     }
 
@@ -33,7 +34,7 @@ class McpStartupTests {
             assertThat(context).hasNotFailed();
             assertThat(context.getBean(McpConnections.class).names()).isEmpty();
             assertThat(context.getBean(SharedToolkit.class).toolkit().getToolNames())
-                    .containsExactlyInAnyOrder("get_current_time", "calculate", "list_my_notes", "retrieve");
+                    .containsExactlyInAnyOrder("get_weather", "get_current_time", "calculate", "list_my_notes", "retrieve");
         });
     }
 

@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.Map;
 
 import com.yoke.controller.ChatController;
-import com.yoke.model.ChatEvent;
 import com.yoke.model.ChatRequest;
+import com.yoke.support.AguiTestSupport;
 import com.yoke.support.McpTestServer;
 import com.yoke.support.RedisIntegrationTest;
 import com.yoke.support.ScriptedModel;
@@ -18,7 +18,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -77,51 +76,44 @@ class ToolsEndToEndTests extends RedisIntegrationTest {
     @Autowired
     ChatController controller;
 
-    private List<ChatEvent> stream(ChatRequest request) {
-        return controller.stream(request).map(ServerSentEvent::data).collectList().block(Duration.ofSeconds(60));
-    }
-
-    private static String toolOutput(List<ChatEvent> events) {
-        return events.stream().filter(ChatEvent.ToolResult.class::isInstance).map(ChatEvent.ToolResult.class::cast)
-                .map(ChatEvent.ToolResult::output).findFirst().orElseThrow();
+    private List<Map<String, Object>> stream(String threadId, String text) {
+        return AguiTestSupport.run(controller, threadId, text);
     }
 
     @Test
     void 检索工具在真实装配下连着知识库_返回带编号的资料() {
-        List<ChatEvent> events = stream(new ChatRequest("e2e-r-" + System.nanoTime(), "对话历史存在哪里"));
+        List<Map<String, Object>> events = stream("e2e-r-" + System.nanoTime(), "对话历史存在哪里");
 
-        ChatEvent.ToolCall call = events.stream().filter(ChatEvent.ToolCall.class::isInstance)
-                .map(ChatEvent.ToolCall.class::cast).findFirst().orElseThrow();
-        ChatEvent.ToolResult result = events.stream().filter(ChatEvent.ToolResult.class::isInstance)
-                .map(ChatEvent.ToolResult.class::cast).findFirst().orElseThrow();
-        assertThat(call.name()).isEqualTo("retrieve");
-        assertThat(call.arguments()).contains("对话历史存在哪里").contains("\"top_k\":2");
-        assertThat(result.id()).isEqualTo(call.id());
-        assertThat(events.indexOf(call)).as("toolCall 先于 toolResult").isLessThan(events.indexOf(result));
-        assertThat(result.output()).contains("[1] 来源：").contains("Redis").doesNotContain("尚未配置");
-        assertThat(events.getLast()).isInstanceOf(ChatEvent.Done.class);
+        Map<String, Object> call = AguiTestSupport.first(events, "TOOL_CALL_START");
+        Map<String, Object> result = AguiTestSupport.first(events, "TOOL_CALL_RESULT");
+        assertThat(call.get("toolCallName")).isEqualTo("retrieve");
+        assertThat(AguiTestSupport.toolArguments(events)).contains("对话历史存在哪里").contains("\"top_k\":2");
+        assertThat(result.get("toolCallId")).isEqualTo(call.get("toolCallId"));
+        assertThat(events.indexOf(call)).as("工具调用先于工具结果").isLessThan(events.indexOf(result));
+        assertThat(String.valueOf(result.get("content"))).contains("[1] 来源：").contains("Redis").doesNotContain("尚未配置");
+        assertThat(events.getLast().get("type")).isEqualTo("RUN_FINISHED");
     }
 
     @Test
     void 配置的只读MCP工具在真实装配下经过完整的ReAct循环被调用() {
-        List<ChatEvent> events = stream(new ChatRequest("e2e-m-" + System.nanoTime(), "请回显一下"));
+        List<Map<String, Object>> events = stream("e2e-m-" + System.nanoTime(), "请回显一下");
 
-        ChatEvent.ToolCall call = events.stream().filter(ChatEvent.ToolCall.class::isInstance)
-                .map(ChatEvent.ToolCall.class::cast).findFirst().orElseThrow();
-        ChatEvent.ToolResult result = events.stream().filter(ChatEvent.ToolResult.class::isInstance)
-                .map(ChatEvent.ToolResult.class::cast).findFirst().orElseThrow();
-        assertThat(call.name()).isEqualTo("echo");
-        assertThat(result.id()).isEqualTo(call.id());
-        assertThat(result.output()).contains("echo: 来自端到端");
+        Map<String, Object> call = AguiTestSupport.first(events, "TOOL_CALL_START");
+        Map<String, Object> result = AguiTestSupport.first(events, "TOOL_CALL_RESULT");
+        assertThat(call.get("toolCallName")).isEqualTo("echo");
+        assertThat(result.get("toolCallId")).isEqualTo(call.get("toolCallId"));
+        assertThat(String.valueOf(result.get("content"))).contains("echo: 来自端到端");
         assertThat(events.indexOf(call)).isLessThan(events.indexOf(result));
-        assertThat(((ChatEvent.Done) events.getLast()).text()).contains("echo: 来自端到端");
+        assertThat(AguiTestSupport.text(events)).contains("echo: 来自端到端");
         assertThat(MCP.writeNoteCalls).hasValue(0);
     }
 
     @Test
     void 请求里的userId在真实装配下传到了工具() {
-        List<ChatEvent> alice = stream(new ChatRequest("e2e-a-" + System.nanoTime(), "我的笔记", "alice"));
+        // 流式接口固定归属 default 用户，指定 userId 只能走 /api/chat；脚本模型把工具结果放进回复
+        String reply = controller.chat(new ChatRequest("e2e-a-" + System.nanoTime(), "我的笔记", "alice"))
+                .block(Duration.ofSeconds(60)).reply();
 
-        assertThat(toolOutput(alice)).contains("alice").contains("MCP");
+        assertThat(reply).contains("alice").contains("MCP");
     }
 }

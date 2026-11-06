@@ -4,6 +4,7 @@ import com.yoke.knowledge.RetrievePort;
 import com.yoke.mcp.McpConnections;
 import com.yoke.tool.ChatTools;
 import com.yoke.tool.RetrieveTool;
+import com.yoke.tool.WeatherTool;
 import io.agentscope.core.tool.Toolkit;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -11,9 +12,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 工具装配：Yoke 自己的工具、检索工具和外部 MCP 工具汇总到一个 Toolkit 模板里。
+ * 工具装配：Yoke 自己的工具（含天气）、检索工具和外部 MCP 工具汇总到一个 Toolkit 模板里。
  *
- * <p>三个来源的工具类都是无状态的，可以安全地被所有请求的 Toolkit 副本共享。
+ * <p>这些工具类都是无状态的，可以安全地被所有请求的 Toolkit 副本共享。
  * 没有配置 MCP 服务时 {@link McpConnections} 是空的，不影响启动。
  */
 @Configuration(proxyBeanMethods = false)
@@ -36,9 +37,11 @@ public class ToolConfiguration {
     }
 
     @Bean
-    public SharedToolkit sharedToolkit(ChatTools chatTools, RetrieveTool retrieveTool, McpConnections mcp) {
+    public SharedToolkit sharedToolkit(
+            ChatTools chatTools, WeatherTool weatherTool, RetrieveTool retrieveTool, McpConnections mcp) {
         Toolkit template = new Toolkit();
         template.registerTool(chatTools);
+        template.registerTool(weatherTool);
         template.registerTool(retrieveTool);
         mcp.registerInto(template);
         return new SharedToolkit(template);

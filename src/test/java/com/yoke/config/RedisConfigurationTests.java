@@ -1,5 +1,7 @@
 package com.yoke.config;
 
+import java.util.Objects;
+
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,7 +17,7 @@ class RedisConfigurationTests {
 
     private static String allMessages(Throwable error) {
         StringBuilder all = new StringBuilder();
-        for (Throwable t = error; t != null; t = t.getCause()) {
+        for (Throwable t = error; Objects.nonNull(t); t = t.getCause()) {
             all.append(t.getClass().getName()).append(": ").append(t.getMessage()).append('\n');
         }
         return all.toString();

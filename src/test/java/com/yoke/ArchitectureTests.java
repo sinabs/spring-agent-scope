@@ -28,9 +28,24 @@ class ArchitectureTests {
             "io.agentscope.core.agent.RuntimeContext",
             "io.agentscope.core.agent.RuntimeContext$Builder");
 
+    /** 配置类装配适配器配置所必需的 AG-UI 类型，其余 AG-UI 类型一律不行。 */
+    private static final Set<String> CONFIG_AGUI_ALLOWED = Set.of(
+            "io.agentscope.core.agui.adapter.AguiAdapterConfig",
+            "io.agentscope.core.agui.adapter.AguiAdapterConfig$Builder");
+
+    private static final DescribedPredicate<JavaClass> AGUI_OUTSIDE_CONFIG_ALLOWED_LIST = DescribedPredicate
+            .and(resideInAPackage("io.agentscope.core.agui.."),
+                    DescribedPredicate.not(new DescribedPredicate<>(
+                            "the config allowed types " + CONFIG_AGUI_ALLOWED) {
+                        @Override
+                        public boolean test(JavaClass input) {
+                            return CONFIG_AGUI_ALLOWED.contains(input.getName());
+                        }
+                    }));
+
     private static final DescribedPredicate<JavaClass> FRAMEWORK_OUTSIDE_ALLOWED_LIST = DescribedPredicate
             .and(resideInAPackage("io.agentscope.."),
-                    DescribedPredicate.not(new DescribedPredicate<JavaClass>(
+                    DescribedPredicate.not(new DescribedPredicate<>(
                             "the controller allowed types " + CONTROLLER_ALLOWED) {
                         @Override
                         public boolean test(JavaClass input) {
@@ -83,4 +98,14 @@ class ArchitectureTests {
     static final ArchRule MCP连接只依赖框架的tool包 = noClasses().that().resideInAPackage("com.yoke.mcp..")
             .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
                     DescribedPredicate.not(resideInAPackage("io.agentscope.core.tool.."))));
+
+    @ArchTest
+    static final ArchRule AGUI协议类型只能出现在codec和config里 = noClasses()
+            .that().resideOutsideOfPackages("com.yoke.codec..", "com.yoke.config..")
+            .should().dependOnClassesThat().resideInAPackage("io.agentscope.core.agui..");
+
+    @ArchTest
+    static final ArchRule config只能依赖适配器配置这几个AGUI类型 = noClasses()
+            .that().resideInAPackage("com.yoke.config..")
+            .should().dependOnClassesThat(AGUI_OUTSIDE_CONFIG_ALLOWED_LIST);
 }

@@ -2,12 +2,13 @@ package com.yoke.controller;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import cn.hutool.core.util.StrUtil;
 import com.yoke.api.ChatApi;
-import com.yoke.codec.EventCodec;
+import com.yoke.codec.AguiStreamCodec;
 import com.yoke.codec.MessageCodec;
 import com.yoke.config.HarnessAgentFactory;
-import com.yoke.model.ChatEvent;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
 import com.yoke.tool.UserContext;
@@ -19,7 +20,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
@@ -31,47 +31,58 @@ public class ChatController implements ChatApi {
 
     private final HarnessAgentFactory agentFactory;
 
+    private final AguiStreamCodec aguiCodec;
+
     @Override
     public Mono<ChatResponse> chat(ChatRequest request) {
         String userId = resolveUserId(request);
         String sessionId = resolveSessionId(request);
 
+        // eager=false：回复先交给调用方再关闭 Agent，关闭失败只记日志，不把已经成功的对话变成 500
         return Mono.using(
                 agentFactory::create,
                 agent -> agent.call(MessageCodec.toInput(request.message()), contextOf(userId, sessionId))
                         .map(reply -> new ChatResponse(sessionId, MessageCodec.toText(reply))),
-                HarnessAgent::close);
+                HarnessAgent::close,
+                false);
     }
 
     @Override
-    public Flux<ServerSentEvent<ChatEvent>> stream(ChatRequest request) {
-        String userId = resolveUserId(request);
-        String sessionId = resolveSessionId(request);
+    public Flux<ServerSentEvent<String>> stream(String body) {
+        // 校验失败在这里抛出，发生在建立流之前，所以是 400 而不是流内错误
+        AguiStreamCodec.StreamRequest request = aguiCodec.parse(body);
 
-        return Flux.using(
-                        agentFactory::create,
-                        agent -> {
-                            EventCodec codec = new EventCodec(sessionId);
-                            return agent.streamEvents(MessageCodec.toInput(request.message()), contextOf(userId, sessionId))
-                                    .concatMapIterable(codec::decode);
-                        },
-                        HarnessAgent::close)
-                .onErrorResume(error -> {
-                    log.warn("流式对话出错，sessionId={}", sessionId, error);
-                    return Flux.just(new ChatEvent.Error(describe(error)));
+        return Flux.defer(() -> {
+                    // 记录是否已经发出过事件：没发出过（例如创建 Agent 失败）就要先补 RUN_STARTED。
+                    // 放在 defer 里，每次订阅一份，重复订阅时不会沿用上一次的状态
+                    AtomicBoolean started = new AtomicBoolean();
+                    // AG-UI 的请求体里没有用户标识，流式接口固定归属 default 用户
+                    // eager=false：先把完成或出错信号交给下游，再关闭 Agent；关闭时抛出的异常由 Reactor 记日志丢弃，
+                    // 不会变成 onError。否则正常发出 RUN_FINISHED 之后，下面的 onErrorResume 还会再补一个 RUN_ERROR，
+                    // 打破二者互斥的承诺
+                    return Flux.using(
+                                    agentFactory::create,
+                                    agent -> aguiCodec.stream(agent, request, contextOf(DEFAULT_USER_ID, request.threadId())),
+                                    HarnessAgent::close,
+                                    false)
+                            .doOnNext(_ -> started.set(true))
+                            .onErrorResume(error -> {
+                                log.warn("流式对话出错，threadId={}", request.threadId(), error);
+                                return aguiCodec.encodeError(request, error, started.get());
+                            });
                 })
-                .map(event -> ServerSentEvent.builder(event).event(event.eventName()).build());
+                .map(data -> ServerSentEvent.builder(data).build());
     }
 
     private static String resolveSessionId(ChatRequest request) {
         return Optional.ofNullable(request.sessionId())
-                .filter(StringUtils::hasText)
+                .filter(StrUtil::isNotBlank)
                 .orElseGet(() -> UUID.randomUUID().toString());
     }
 
     private static String resolveUserId(ChatRequest request) {
         return Optional.ofNullable(request.userId())
-                .filter(StringUtils::hasText)
+                .filter(StrUtil::isNotBlank)
                 .orElse(DEFAULT_USER_ID);
     }
 
@@ -82,9 +93,5 @@ public class ChatController implements ChatApi {
                 // 工具方法里不带 @ToolParam 的 UserContext 参数按类型从这里注入，模型看不到也伪造不了
                 .put(UserContext.class, new UserContext(userId))
                 .build();
-    }
-
-    private static String describe(Throwable error) {
-        return StringUtils.hasText(error.getMessage()) ? error.getMessage() : error.getClass().getSimpleName();
     }
 }

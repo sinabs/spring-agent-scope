@@ -1,0 +1,81 @@
+### 第 01 课第八节的请求汇总（流式部分已改为 AG-UI 协议），在 IDEA 里点每个请求左边的绿色三角即可运行。
+### 使用前：export ARK_API_KEY=... 后 ./gradlew bootRun（默认激活 local 环境，端口 8080）。
+### 想换地址或会话，改下面两个变量；换一个新的 threadId 就等于清空历史。
+### 流式接口收标准的 AG-UI RunAgentInput：threadId 就是会话 ID（必填，字母数字 _.- 共 1~64 位），
+### runId 必填（本次运行的 ID，每次请求换一个），messages 里的每条消息必须有 id 和 role，服务端只采用最后一条 user 消息。
+@host = http://localhost:8080
+@thread = demo-01
+
+### 1. 流式：依次收到 RUN_STARTED、TEXT_MESSAGE_START/CONTENT/END、CUSTOM token_usage，最后是 RUN_FINISHED
+### 没有 done 事件，完整回复由客户端拼接 TEXT_MESSAGE_CONTENT 的 delta
+POST {{host}}/api/chat/stream
+Content-Type: application/json
+
+{
+  "threadId": "{{thread}}",
+  "runId": "run-1",
+  "messages": [
+    { "id": "msg-1", "role": "user", "content": "用一句话介绍一下你自己" }
+  ]
+}
+
+### 2. 同步：同一个会话续聊（同步接口的 sessionId 就是上面的 threadId），模型应该记得上一轮说过什么（先运行第 1 个请求）
+POST {{host}}/api/chat
+Content-Type: application/json
+
+{
+  "sessionId": "{{thread}}",
+  "message": "我刚才让你做了什么？"
+}
+
+### 3. 空白文本：校验在建立流之前拦下，期望 400，不会调用模型
+### 缺 messages、最后一条不是 user、threadId 不合规（例如 "../x"）同样是 400
+POST {{host}}/api/chat/stream
+Content-Type: application/json
+
+{
+  "threadId": "{{thread}}",
+  "runId": "run-2",
+  "messages": [
+    { "id": "msg-1", "role": "user", "content": " " }
+  ]
+}
+
+### 4. 流式 + 天气工具：模型会调用 get_weather（真实访问 Open-Meteo，需要能上外网）
+### 先收到 TOOL_CALL_START、TOOL_CALL_ARGS、TOOL_CALL_END、TOOL_CALL_RESULT，再收到回复文本和 RUN_FINISHED
+POST {{host}}/api/chat/stream
+Content-Type: application/json
+
+{
+  "threadId": "{{thread}}-weather",
+  "runId": "run-3",
+  "messages": [
+    { "id": "msg-1", "role": "user", "content": "北京现在天气怎么样？要带伞吗？" }
+  ]
+}
+
+### 5. 同步 + 天气工具：只能拿到最终回复，看不到中间过程
+POST {{host}}/api/chat
+Content-Type: application/json
+
+{
+  "sessionId": "{{thread}}-weather-sync",
+  "message": "上海现在多少度？"
+}
+
+### 6. 工具失败的路径：城市不存在时工具返回提示语，模型据此如实回答
+### 注意 TOOL_CALL_RESULT 照常出现，框架眼里工具正常返回了字符串
+POST {{host}}/api/chat/stream
+Content-Type: application/json
+
+{
+  "threadId": "{{thread}}-notfound",
+  "runId": "run-4",
+  "messages": [
+    { "id": "msg-1", "role": "user", "content": "查一下 Zxqvbnmlkj 这个城市的天气" }
+  ]
+}
+
+### 模型出错（流式是 200 加 RUN_ERROR 事件，同步是 500）没有放进来：要触发它得把模型名改错再重启，例如
+###   AGENTSCOPE_OPENAI_MODEL_NAME=no-such-model ./gradlew bootRun
+### 然后重新运行第 1 个和第 2 个请求，对比两个接口的区别。

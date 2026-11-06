@@ -5,12 +5,13 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -48,8 +49,8 @@ public record YokeProperties(
 
         /** record 自动生成的 toString 会原样带出连接串，日志或调试输出里就泄漏密码，所以这里脱敏。 */
         @Override
-        public String toString() {
-            return "Redis[uri=" + (uri == null ? null : RedisConfiguration.redact(uri)) + ", keyPrefix=" + keyPrefix + "]";
+        public @NonNull String toString() {
+            return "Redis[uri=" + Optional.ofNullable(uri).map(RedisConfiguration::redact).orElse(null) + ", keyPrefix=" + keyPrefix + "]";
         }
     }
 
@@ -62,17 +63,17 @@ public record YokeProperties(
      * @param triggerMessages 对话消息达到这个条数就触发压缩
      * @param keepMessages    压缩后原样保留最近多少条
      */
+    @Slf4j
     public record Compaction(
             @DefaultValue("30") int triggerMessages,
             @DefaultValue("10") int keepMessages) {
-
-        private static final Logger log = LoggerFactory.getLogger(Compaction.class);
 
         public static final int DEFAULT_TRIGGER_MESSAGES = 30;
         public static final int DEFAULT_KEEP_MESSAGES = 10;
 
         public Compaction {
-            if (triggerMessages <= 0 || keepMessages <= 0 || keepMessages >= triggerMessages) {
+            // keepMessages > 0 且 keepMessages < triggerMessages 已经蕴含 triggerMessages > 0，所以不用单独判断触发条数
+            if (keepMessages <= 0 || keepMessages >= triggerMessages) {
                 log.warn("压缩配置不合法（trigger-messages={}, keep-messages={}），回落到默认值 {} / {}",
                         triggerMessages, keepMessages, DEFAULT_TRIGGER_MESSAGES, DEFAULT_KEEP_MESSAGES);
                 triggerMessages = DEFAULT_TRIGGER_MESSAGES;

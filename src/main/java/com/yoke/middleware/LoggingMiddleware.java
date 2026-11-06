@@ -1,6 +1,7 @@
 package com.yoke.middleware;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -12,6 +13,7 @@ import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.model.Model;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
@@ -24,7 +26,7 @@ import org.springframework.stereotype.Component;
  * <p>只记录 agentId、userId、sessionId、耗时和工具名，不记录消息内容，也不记录工具的参数和输出，
  * 因为这些里面可能有用户隐私或密钥。出错只记 warn 和异常类型，异常本身继续向上抛，不吞掉。
  *
- * <p>2.0.4 里 {@link MiddlewareBase} 是接口，钩子都有默认实现，这里只覆盖三个。
+ * <p>在 AgentScope 中 {@link MiddlewareBase} 是接口，钩子都有默认实现，这里只覆盖三个。
  * 钩子返回的是事件流，所以计时必须放进 {@code Flux.defer}：订阅时才开始计，而不是构造流的时候。
  */
 @Slf4j
@@ -40,7 +42,7 @@ public class LoggingMiddleware implements MiddlewareBase {
     @Override
     public Flux<AgentEvent> onModelCall(
             Agent agent, RuntimeContext ctx, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
-        String model = input.model() == null ? "unknown" : input.model().getModelName();
+        String model = Optional.ofNullable(input.model()).map(Model::getModelName).orElse("unknown");
         return traced("model", agent, ctx, "model=" + model, () -> next.apply(input));
     }
 

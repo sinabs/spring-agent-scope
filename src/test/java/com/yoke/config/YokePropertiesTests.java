@@ -92,7 +92,7 @@ class YokePropertiesTests {
 
         assertThat(config.getTriggerMessages()).isEqualTo(30);
         assertThat(config.getKeepMessages()).isEqualTo(10);
-        // 0 在 2.0.4 里是「按上下文窗口动态计算」，不是关闭；用最大值让 token 阈值实际上不会先触发
+        // AgentScope 中 0 表示「按上下文窗口动态计算」，不是关闭；用最大值让 token 阈值实际上不会先触发
         assertThat(config.getTriggerTokens()).isEqualTo(Integer.MAX_VALUE);
         // 0 才改用 keepMessages，默认 -1 是动态 token
         assertThat(config.getKeepTokens()).isZero();

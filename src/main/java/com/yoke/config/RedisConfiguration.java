@@ -1,5 +1,6 @@
 package com.yoke.config;
 
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 import io.agentscope.extensions.redis.RedisDistributedStore;
@@ -36,7 +37,7 @@ public class RedisConfiguration {
             jedis = RedisClient.create(uri);
             jedis.ping();
         } catch (RuntimeException e) {
-            if (jedis != null) {
+            if (Objects.nonNull(jedis)) {
                 jedis.close();
             }
             // 不把原始异常作为 cause：Jedis 对格式非法的连接串会在异常消息里原样回显，可能带出密码
