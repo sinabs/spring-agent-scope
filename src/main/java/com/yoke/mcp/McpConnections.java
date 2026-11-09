@@ -3,6 +3,7 @@ package com.yoke.mcp;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 
 import com.yoke.config.YokeProperties;
@@ -37,6 +38,9 @@ public final class McpConnections implements AutoCloseable {
     public interface ClientFactory extends Function<YokeProperties.McpServer, McpClientWrapper> {
     }
 
+    /** 读取工具清单的等待上限：服务端卡住时不能让启动无限挂起。 */
+    private static final Duration LIST_TOOLS_TIMEOUT = Duration.ofSeconds(10);
+
     private final List<McpClientWrapper> clients = new ArrayList<>();
 
     private McpConnections() {
@@ -57,8 +61,9 @@ public final class McpConnections implements AutoCloseable {
                 client.initialize().block(initTimeout(server));
                 log.info("MCP 服务已连接：{}（{}）", server.name(), server.transport());
             } catch (RuntimeException e) {
+                // 不把原异常作为 cause：它的消息里可能带着地址中的 token，只留类名
                 RuntimeException primary = new IllegalStateException("无法连接 MCP 服务 " + server
-                        + "，请确认服务已启动且地址、传输方式正确（原因：" + e.getClass().getSimpleName() + "）", e);
+                        + "，请确认服务已启动且地址、传输方式正确（原因：" + e.getClass().getSimpleName() + "）");
                 connections.closeSuppressing(primary);
                 throw primary;
             }
@@ -72,18 +77,26 @@ public final class McpConnections implements AutoCloseable {
      * <p><b>只注册服务端声明了 {@code readOnlyHint} 的工具</b>，其余跳过，模型根本看不到它们。原因：2.0.4 对 MCP 工具
      * 只放行只读的，其余都要用户确认；HTTP 接口没有人工确认通道，把它们暴露给模型只会让一轮对话在工具调用处无声结束，
      * 调用方拿到空回复。与其这样，不如一开始就不暴露。跳过时只记工具名到 INFO 日志，不记参数。
+     * 暴露的工具名若与 Toolkit 里已有的工具重名（例如内置的 {@code calculate}），启动失败，避免外部服务悄悄顶替内置工具。
      * 用 {@code disableTools} 而不是 {@code enableTools}：后者传空列表在 2.0.4 里表示「全部启用」。
      */
     public void registerInto(Toolkit toolkit) {
         for (McpClientWrapper client : clients) {
-            List<String> skipped = client.listTools().block().stream()
-                    .filter(tool -> tool.annotations() == null || !Boolean.TRUE.equals(tool.annotations().readOnlyHint()))
-                    .map(McpSchema.Tool::name).toList();
+            List<McpSchema.Tool> tools = client.listTools().block(LIST_TOOLS_TIMEOUT);
+            List<String> skipped = tools.stream().filter(McpConnections::notReadOnly).map(McpSchema.Tool::name).toList();
+            tools.stream().map(McpSchema.Tool::name).filter(name -> !skipped.contains(name))
+                    .filter(toolkit.getToolNames()::contains).findFirst().ifPresent(name -> {
+                        throw new IllegalStateException("MCP 服务 " + client.getName() + " 的工具 " + name + " 与已有工具重名");
+                    });
             if (!skipped.isEmpty()) {
                 log.info("MCP 服务 {} 的以下工具未声明只读，不暴露给模型：{}", client.getName(), skipped);
             }
             toolkit.registration().mcpClient(client).disableTools(skipped).apply();
         }
+    }
+
+    private static boolean notReadOnly(McpSchema.Tool tool) {
+        return Objects.isNull(tool.annotations()) || !Boolean.TRUE.equals(tool.annotations().readOnlyHint());
     }
 
     public List<String> names() {
@@ -99,7 +112,7 @@ public final class McpConnections implements AutoCloseable {
                 client.close();
             } catch (RuntimeException e) {
                 log.warn("关闭 MCP 连接失败：{}", client.getName(), e);
-                if (failure == null) {
+                if (Objects.isNull(failure)) {
                     failure = e;
                 } else {
                     failure.addSuppressed(e);
@@ -107,7 +120,7 @@ public final class McpConnections implements AutoCloseable {
             }
         }
         clients.clear();
-        if (failure != null) {
+        if (Objects.nonNull(failure)) {
             throw failure;
         }
     }

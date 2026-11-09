@@ -3,6 +3,7 @@ package com.yoke.tool;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.function.Supplier;
+import cn.hutool.core.util.StrUtil;
 
 /**
  * 四则运算表达式求值器，手写的递归下降解析器。
@@ -51,7 +52,7 @@ public final class ExpressionEvaluator {
      * @throws InvalidExpressionException 表达式为空、过长、含非法字符、语法错误或除数为 0
      */
     public static String evaluate(String expression) {
-        if (expression == null || expression.isBlank()) {
+        if (StrUtil.isBlank(expression)) {
             throw new InvalidExpressionException("表达式不能为空");
         }
         if (expression.length() > MAX_LENGTH) {

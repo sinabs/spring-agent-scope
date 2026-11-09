@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,7 +58,7 @@ public final class HybridRetrievePort implements RetrievePort {
                 .collectList()
                 .flatMap(outcomes -> {
                     List<List<Passage>> succeeded = outcomes.stream()
-                            .filter(outcome -> outcome.error() == null)
+                            .filter(outcome -> Objects.isNull(outcome.error()))
                             .map(Outcome::passages)
                             .toList();
                     if (succeeded.isEmpty()) {

@@ -60,6 +60,6 @@ class KnowledgeCorpusTests {
         assertThat(port.retrieve("为什么不允许 stdio 传输", 3).block()).first()
                 .satisfies(passage -> assertThat(passage.text()).contains("stdio"));
         assertThat(port.retrieve("流式接口有哪些事件", 3).block()).first()
-                .satisfies(passage -> assertThat(passage.text()).contains("textDelta"));
+                .satisfies(passage -> assertThat(passage.text()).contains("TEXT_MESSAGE_CONTENT"));
     }
 }

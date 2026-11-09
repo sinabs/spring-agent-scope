@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -48,11 +49,11 @@ public final class KnowledgeCorpus {
 
     /** 把一篇 Markdown 切成片段；{@code fileName} 只在文档没有一级标题时充当标题。 */
     static List<Passage> split(String fileName, String markdown) {
-        String title = fileName == null ? "未命名文档" : fileName;
+        String title = Optional.ofNullable(fileName).orElse("未命名文档");
         String section = null;
         StringBuilder body = new StringBuilder();
         List<Passage> passages = new ArrayList<>();
-        String docId = fileName == null ? "doc" : fileName;
+        String docId = Optional.ofNullable(fileName).orElse("doc");
 
         for (String line : markdown.split("\\R")) {
             if (line.startsWith("# ")) {
@@ -74,7 +75,7 @@ public final class KnowledgeCorpus {
         if (text.isEmpty()) {
             return;
         }
-        String heading = section == null ? title : title + " / " + section;
+        String heading = Optional.ofNullable(section).map(name -> title + " / " + name).orElse(title);
         StringBuilder chunk = new StringBuilder();
         for (String paragraph : text.split("\\n\\s*\\n")) {
             if (chunk.length() > 0 && chunk.length() + paragraph.length() > MAX_CHUNK_LENGTH) {

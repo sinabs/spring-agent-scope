@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -48,7 +49,7 @@ public final class OpenAiEmbeddingClient implements EmbeddingClient {
         body.put("model", modelName);
         body.put("input", texts);
         body.put("encoding_format", "float");
-        if (dimensions != null) {
+        if (Objects.nonNull(dimensions)) {
             body.put("dimensions", dimensions);
         }
         Map<String, Object> response = client.post()
@@ -57,7 +58,7 @@ public final class OpenAiEmbeddingClient implements EmbeddingClient {
                 .body(body)
                 .retrieve()
                 .body(Map.class);
-        if (response == null || !(response.get("data") instanceof List<?> data) || data.size() != texts.size()) {
+        if (Objects.isNull(response) || !(response.get("data") instanceof List<?> data) || data.size() != texts.size()) {
             throw new IllegalStateException("向量化接口返回的条数与请求不一致");
         }
         List<Map<String, Object>> items = new ArrayList<>();

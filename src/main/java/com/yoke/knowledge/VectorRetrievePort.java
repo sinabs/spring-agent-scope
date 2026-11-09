@@ -3,7 +3,9 @@ package com.yoke.knowledge;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
+import cn.hutool.core.util.StrUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -34,7 +36,7 @@ public final class VectorRetrievePort implements RetrievePort {
 
     @Override
     public Mono<List<Passage>> retrieve(String query, int topK) {
-        if (query == null || query.isBlank() || topK <= 0 || passages.isEmpty()) {
+        if (StrUtil.isBlank(query) || topK <= 0 || passages.isEmpty()) {
             return Mono.just(List.of());
         }
         return index().flatMap(vectors -> embeddings.embed(List.of(query)).map(queryVectors -> {
@@ -55,7 +57,7 @@ public final class VectorRetrievePort implements RetrievePort {
 
     /** 同一时刻只会有一个在建的索引；失败后清掉，让下一次检索重试。 */
     private synchronized Mono<List<double[]>> index() {
-        if (index == null) {
+        if (Objects.isNull(index)) {
             index = buildIndex()
                     .doOnError(e -> {
                         log.warn("知识库向量索引构建失败，下次检索会重试：{}", e.getMessage());

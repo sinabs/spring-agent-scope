@@ -8,7 +8,10 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
+import cn.hutool.core.util.StrUtil;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import org.slf4j.Logger;
@@ -57,7 +60,7 @@ public class ChatTools {
                     description = "IANA 时区名，例如 Asia/Shanghai、America/New_York；不传时用 UTC") String timezone) {
         ZoneId zone;
         try {
-            zone = timezone == null || timezone.isBlank() ? ZoneId.of("UTC") : ZoneId.of(timezone.trim());
+            zone = ZoneId.of(Optional.ofNullable(timezone).filter(StrUtil::isNotBlank).map(String::trim).orElse("UTC"));
         } catch (DateTimeException e) {
             return "无法识别的时区：" + abbreviate(timezone) + "。请使用 IANA 时区名，例如 Asia/Shanghai。";
         }
@@ -86,11 +89,11 @@ public class ChatTools {
     public String listMyNotes(
             UserContext user,
             @ToolParam(name = "limit", required = false, description = "最多返回几条，默认 5，上限 20") Integer limit) {
-        if (user == null || user.userId() == null || user.userId().isBlank()) {
+        if (Objects.isNull(user) || StrUtil.isBlank(user.userId())) {
             log.warn("list_my_notes 被调用但 RuntimeContext 里没有 UserContext，拒绝返回数据");
             return "无法确定当前用户，已拒绝返回笔记。";
         }
-        int max = limit == null ? 5 : Math.clamp(limit, 1, MAX_NOTES);
+        int max = Optional.ofNullable(limit).map(value -> Math.clamp(value, 1, MAX_NOTES)).orElse(5);
         List<String> notes = NOTES.getOrDefault(user.userId(), List.of());
         if (notes.isEmpty()) {
             return "当前用户（" + user.userId() + "）还没有笔记。";

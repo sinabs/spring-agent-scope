@@ -51,6 +51,22 @@ class McpConnectionsTests {
     }
 
     @Test
+    void MCP工具与已有工具重名时启动失败_不让外部服务顶替内置工具() {
+        try (McpConnections connections = McpConnections.connect(List.of(server("demo", Map.of())))) {
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerTool(new Object() {
+                @io.agentscope.core.tool.Tool(name = "echo", description = "内置同名工具")
+                public String echo() {
+                    return "builtin";
+                }
+            });
+
+            assertThatThrownBy(() -> connections.registerInto(toolkit))
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("echo").hasMessageContaining("重名");
+        }
+    }
+
+    @Test
     void 未声明只读的工具不会注册进Toolkit_只读的才会() {
         try (McpConnections connections = McpConnections.connect(List.of(server("demo", Map.of())))) {
             Toolkit toolkit = new Toolkit();
@@ -212,7 +228,8 @@ class McpConnectionsTests {
                 // 主异常是「c 连不上」，不是关闭 b 时的失败
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("无法连接 MCP 服务").hasMessageContaining("name=c")
-                .hasRootCauseMessage("连接被拒绝")
+                // 原异常不作为 cause 传出（消息里可能带着地址里的令牌），只在主异常消息里留类名
+                .hasNoCause().hasMessageContaining("IllegalStateException").hasMessageNotContaining("连接被拒绝")
                 // 关闭 b 的失败只作为 suppressed 挂着，没有掩盖主因
                 .satisfies(e -> assertThat(e.getSuppressed()).containsExactly(closeFailure));
 

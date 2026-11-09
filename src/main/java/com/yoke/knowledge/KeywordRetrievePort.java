@@ -7,8 +7,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
+import cn.hutool.core.util.StrUtil;
 import reactor.core.publisher.Mono;
 
 /**
@@ -50,7 +52,7 @@ public final class KeywordRetrievePort implements RetrievePort {
     }
 
     private List<Passage> search(String query, int topK) {
-        if (query == null || query.isBlank() || topK <= 0 || passages.isEmpty()) {
+        if (StrUtil.isBlank(query) || topK <= 0 || passages.isEmpty()) {
             return List.of();
         }
         Set<String> queryTerms = new HashSet<>(tokenize(query));
@@ -75,7 +77,7 @@ public final class KeywordRetrievePort implements RetrievePort {
         double score = 0;
         for (String term : queryTerms) {
             Integer tf = frequencies.get(term);
-            if (tf == null) {
+            if (Objects.isNull(tf)) {
                 continue;
             }
             int df = documentFrequency.getOrDefault(term, 0);
