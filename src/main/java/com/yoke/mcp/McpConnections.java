@@ -74,11 +74,11 @@ public final class McpConnections implements AutoCloseable {
     /**
      * 把已连接服务的工具注册进 Toolkit，工具名就是服务端公布的原名。
      *
-     * <p><b>只注册服务端声明了 {@code readOnlyHint} 的工具</b>，其余跳过，模型根本看不到它们。原因：2.0.4 对 MCP 工具
+     * <p><b>只注册服务端声明了 {@code readOnlyHint} 的工具</b>，其余跳过，模型根本看不到它们。原因：AgentScope 对 MCP 工具
      * 只放行只读的，其余都要用户确认；HTTP 接口没有人工确认通道，把它们暴露给模型只会让一轮对话在工具调用处无声结束，
      * 调用方拿到空回复。与其这样，不如一开始就不暴露。跳过时只记工具名到 INFO 日志，不记参数。
      * 暴露的工具名若与 Toolkit 里已有的工具重名（例如内置的 {@code calculate}），启动失败，避免外部服务悄悄顶替内置工具。
-     * 用 {@code disableTools} 而不是 {@code enableTools}：后者传空列表在 2.0.4 里表示「全部启用」。
+     * 用 {@code disableTools} 而不是 {@code enableTools}：后者传空列表在 AgentScope 里表示「全部启用」。
      */
     public void registerInto(Toolkit toolkit) {
         for (McpClientWrapper client : clients) {

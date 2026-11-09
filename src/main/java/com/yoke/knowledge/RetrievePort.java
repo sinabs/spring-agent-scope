@@ -7,7 +7,7 @@ import reactor.core.publisher.Mono;
 /**
  * 检索端口：给一个问题，返回最相关的若干片段。
  *
- * <p>这是 Yoke 自己的接口，不依赖 AgentScope：2.0.4 里框架的 rag 包已经整体标记为「将移除」
+ * <p>这是 Yoke 自己的接口，不依赖 AgentScope：AgentScope 里框架的 rag 包已经整体标记为「将移除」
  * （{@code @Deprecated(forRemoval = true)}，注释写明「在应用层集成检索」），所以检索放在应用层，
  * 以后换向量库、换检索算法都不碰 Agent 和工具的代码。
  *

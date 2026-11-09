@@ -22,7 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 守住「所有请求共用同一个 Toolkit 模板」这个前提：它成立靠的是 2.0.4 的 HarnessAgent.Builder.build() 会先拷贝 Toolkit。
+ * 守住「所有请求共用同一个 Toolkit 模板」这个前提：它成立靠的是 AgentScope 的 HarnessAgent.Builder.build() 会先拷贝 Toolkit。
  * 将来框架升级后如果不再拷贝，Harness 的内置工具会写进模板，这里会失败。
  */
 class SharedToolkitTests {

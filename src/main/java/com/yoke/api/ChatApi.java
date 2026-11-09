@@ -65,10 +65,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
  *
  * <p>子 Agent：{@code summarizer}（代码里声明，只做摘要，没有任何业务工具）、{@code kb-researcher}
  * （工作区文件 {@code workspace/subagents/kb-researcher.md} 声明，只能用 {@code retrieve}）和框架内置的
- * {@code general-purpose}（继承 Yoke 的业务工具）。2.0.4 里子 Agent 不继承父 Agent 的联网工具关闭，所以联网工具靠工具配置里的
+ * {@code general-purpose}（继承 Yoke 的业务工具）。AgentScope 里子 Agent 不继承父 Agent 的联网工具关闭，所以联网工具靠工具配置里的
  * deny 名单在所有层（主 Agent、内置子 Agent、声明的子 Agent）一并禁掉；子 Agent 同样没有文件读写和命令执行，也不能再派生子 Agent。
  *
- * <p>MCP 工具的授权：2.0.4 对 MCP 工具只放行服务端声明了 {@code readOnlyHint} 的，其余需要用户确认，
+ * <p>MCP 工具的授权：AgentScope 对 MCP 工具只放行服务端声明了 {@code readOnlyHint} 的，其余需要用户确认，
  * 而本接口没有人工确认通道，否则一轮对话会在工具调用处无声结束、调用方拿到空回复。
  * 所以注册时就只放行声明了只读的工具，其余跳过（启动日志里记工具名），模型根本看不到它们，
  * 这对主 Agent 和子 Agent 都成立。MCP 服务配置的服务连不上时，应用启动失败。

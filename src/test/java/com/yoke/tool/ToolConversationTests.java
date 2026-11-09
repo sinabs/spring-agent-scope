@@ -135,7 +135,7 @@ class ToolConversationTests {
 
     @Test
     void 未声明只读的MCP工具不会暴露给模型_主Agent和子Agent都看不到_即使模型硬调也不会执行(@TempDir Path workspace) {
-        // 2.0.4 只放行声明了 readOnlyHint 的 MCP 工具，其余要用户确认；HTTP 接口没有确认通道，所以注册时就不暴露
+        // AgentScope 只放行声明了 readOnlyHint 的 MCP 工具，其余要用户确认；HTTP 接口没有确认通道，所以注册时就不暴露
         try (McpTestServer server = new McpTestServer();
                 McpConnections mcp = McpConnections.connect(List.of(new YokeProperties.McpServer(
                         "demo", "streamable-http", server.url(), Duration.ofSeconds(10), Map.of())))) {

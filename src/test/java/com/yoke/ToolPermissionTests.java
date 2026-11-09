@@ -60,7 +60,7 @@ class ToolPermissionTests extends RedisIntegrationTest {
             "memory_get", "memory_search", "session_history", "session_list", "session_search");
 
     /**
-     * 保留下来的框架内置工具，逐个写明（2.0.4 实测）：写记忆、技能加载、异步结果、子 Agent 和后台任务。
+     * 保留下来的框架内置工具，逐个写明（AgentScope 实测）：写记忆、技能加载、异步结果、子 Agent 和后台任务。
      * 写成字面量而不是从参照 Agent 推导，是为了让框架升级新增了任何内置工具时这里失败，逼着人来决定放不放行。
      */
     private static final Set<String> KEPT_BUILT_IN = Set.of(

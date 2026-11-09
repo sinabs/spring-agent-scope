@@ -75,7 +75,7 @@ class ArchitectureTests {
             .should().dependOnClassesThat().resideInAnyPackage("io.agentscope.core.message..", "io.agentscope.core.event..");
 
     /**
-     * 检索端口是应用层自己的接口：不依赖 AgentScope（2.0.4 里框架的 rag 包已标记为将移除），
+     * 检索端口是应用层自己的接口：不依赖 AgentScope（AgentScope 里框架的 rag 包已标记为将移除），
      * 以后换向量库、换检索算法都不影响 Agent 和工具。向量化客户端、关键词检索、融合与降级都在这个包里。
      */
     @ArchTest

@@ -16,7 +16,7 @@ import org.springframework.web.client.RestClient;
 /**
  * 调用 OpenAI 兼容的 {@code POST {baseUrl}/embeddings} 接口。
  *
- * <p>为什么自己写而不用框架的 {@code OpenAITextEmbedding}：它在 rag-simple 模块里。2.0.4 里 agentscope-core 的
+ * <p>为什么自己写而不用框架的 {@code OpenAITextEmbedding}：它在 rag-simple 模块里。AgentScope 里 agentscope-core 的
  * {@code core/rag} 包（{@code Knowledge}、{@code Document}、{@code RetrieveConfig}）已整体标记为
  * {@code @Deprecated(forRemoval = true, since = "2.0.0")}；rag-simple 的 pom 还把 Qdrant client、Milvus sdk、
  * elasticsearch-java、postgresql、pgvector、pdfbox、poi-ooxml、tika-core、tika-parsers-standard-package、

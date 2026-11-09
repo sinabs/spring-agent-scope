@@ -5,7 +5,7 @@ import io.agentscope.core.tool.Toolkit;
 /**
  * 启动时装配好的 Toolkit 模板（Yoke 自己的工具加 MCP 工具），所有请求的 Agent 共用这一个。
  *
- * <p>能共用，依据是 2.0.4 的源码：{@code HarnessAgent.Builder.build()} 一上来就 {@code toolkit.copy()}，
+ * <p>能共用，依据是 AgentScope 的源码：{@code HarnessAgent.Builder.build()} 一上来就 {@code toolkit.copy()}，
  * Harness 自己的内置工具（记忆、会话、子 Agent 等）注册在副本上，传进去的模板不会被污染；
  * {@code Toolkit} 内部的注册表用的是 ConcurrentHashMap，只读的 {@code copy()} 可以并发。
  * 前提是<b>模板在启动之后不再被修改</b>，并且里面的工具实例无状态、线程安全（副本按引用共享工具实例）。

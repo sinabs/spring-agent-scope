@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 子 Agent 的声明与权限。最关键的是安全回归：2.0.4 的子 Agent 不继承父 Agent 的 {@code disableWebTools}，
+ * 子 Agent 的声明与权限。最关键的是安全回归：AgentScope 的子 Agent 不继承父 Agent 的 {@code disableWebTools}，
  * 所以这里用「记录工具清单的假模型」真实驱动每一种子 Agent 跑一次，枚举它实际能看到的工具。
  */
 class SubagentTests {
@@ -120,7 +120,7 @@ class SubagentTests {
 
     @Test
     void 声明文件忘了写tools白名单时也拿不到联网工具_靠的是父Agent的deny名单(@TempDir Path workspace) throws IOException {
-        // 2.0.4 里 tools 为空表示继承父 Agent 的全部工具；这是最容易写错的地方，所以要有第二道防线
+        // AgentScope 里 tools 为空表示继承父 Agent 的全部工具；这是最容易写错的地方，所以要有第二道防线
         TestAgents.factory(new ScriptedModel(c -> ScriptedModel.text("x")), workspace, template());
         Files.writeString(workspace.resolve("subagents/open.md"), """
                 ---
@@ -159,7 +159,7 @@ class SubagentTests {
 
         run(delegatingTo("summarizer"), workspace);
 
-        assertThat(marker).as("Yoke 显式传了 toolsConfig，2.0.4 就不再读 tools.json").doesNotExist();
+        assertThat(marker).as("Yoke 显式传了 toolsConfig，AgentScope 就不再读 tools.json").doesNotExist();
     }
 
     @Test
@@ -176,7 +176,7 @@ class SubagentTests {
             // 握手失败无所谓，进程已经被拉起过
         }
 
-        assertThat(marker).as("没有显式 toolsConfig 时，工作区里的 tools.json 能让 2.0.4 启动任意本地进程").exists();
+        assertThat(marker).as("没有显式 toolsConfig 时，工作区里的 tools.json 能让 AgentScope 启动任意本地进程").exists();
     }
 
     // ---- 声明与冲突 ----
@@ -258,7 +258,7 @@ class SubagentTests {
 
     @Test
     void 工作区里已有的同名声明文件会让启动失败_即使它不是随应用发布的(@TempDir Path workspace) throws IOException {
-        // yoke.workspace 是持久目录：手放的、旧版本遗留的 summarizer.md 在 2.0.4 里会静默替换代码声明
+        // yoke.workspace 是持久目录：手放的、旧版本遗留的 summarizer.md 在 AgentScope 里会静默替换代码声明
         Files.createDirectories(workspace.resolve("subagents"));
         Files.writeString(workspace.resolve("subagents/summarizer.md"), "---\ndescription: 遗留文件\n---\n旧提示词");
 

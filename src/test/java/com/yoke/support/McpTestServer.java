@@ -117,7 +117,7 @@ public final class McpTestServer implements AutoCloseable {
                 .name("echo")
                 .description("原样回显收到的文字，用来验证 MCP 连通")
                 .inputSchema(schema)
-                // 声明只读：2.0.4 对只读的 MCP 工具自动放行，其余都要求显式授权
+                // 声明只读：AgentScope 对只读的 MCP 工具自动放行，其余都要求显式授权
                 .annotations(new McpSchema.ToolAnnotations("echo", true, false, true, false, false))
                 .build();
         return McpServerFeatures.SyncToolSpecification.builder()

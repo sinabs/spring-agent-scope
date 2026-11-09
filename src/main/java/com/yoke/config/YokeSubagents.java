@@ -22,10 +22,10 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  * <ul>
  *   <li><b>编程式</b>：{@link #programmatic()}，在代码里用 {@link SubagentDeclaration} 声明，例如 {@code summarizer}；</li>
  *   <li><b>工作区文件</b>：{@code src/main/resources/workspace/subagents/*.md}，文件名即 agent id，
- *       启动时拷贝到 {@code yoke.workspace/subagents/}，由 HarnessAgent 按 2.0.4 的约定从工作区加载。</li>
+ *       启动时拷贝到 {@code yoke.workspace/subagents/}，由 HarnessAgent 按 AgentScope 的约定从工作区加载。</li>
  * </ul>
  *
- * <p>同一个 id 同时出现在两处时，2.0.4 不会报错：默认的动态加载（DynamicSubagentsMiddleware）里
+ * <p>同一个 id 同时出现在两处时，AgentScope 不会报错：默认的动态加载（DynamicSubagentsMiddleware）里
  * 「动态声明胜出」，工作区文件静默覆盖代码里的声明；框架内置的 {@code general-purpose} 同理，
  * 一个叫 {@code general-purpose.md} 的文件就能把它换掉。配置错位却毫无提示很危险，
  * 所以 Yoke 在启动时自己检查，冲突直接启动失败，见 {@link #requireNoConflict}。
@@ -40,7 +40,7 @@ public final class YokeSubagents {
     public static final String SUMMARIZER = "summarizer";
 
     /**
-     * 「一个工具都不要」的占位名。2.0.4 里声明的 {@code tools} 为空表示继承父 Agent 的全部工具，
+     * 「一个工具都不要」的占位名。AgentScope 里声明的 {@code tools} 为空表示继承父 Agent 的全部工具，
      * 没有办法直接表达「零个」；放一个不存在的名字，白名单非空，其余工具就都被过滤掉了。
      */
     static final String NO_TOOLS = "__no_tools__";
@@ -55,7 +55,7 @@ public final class YokeSubagents {
     static final List<String> DENIED_TOOLS = List.of("web_fetch", "web_search",
             "memory_get", "memory_search", "session_history", "session_list", "session_search");
 
-    /** 工作区里放子 Agent 声明文件的目录名，2.0.4 约定为 {@code <workspace>/subagents/}。 */
+    /** 工作区里放子 Agent 声明文件的目录名，AgentScope 约定为 {@code <workspace>/subagents/}。 */
     static final String WORKSPACE_DIR = "subagents";
 
     private YokeSubagents() {
@@ -75,7 +75,7 @@ public final class YokeSubagents {
     /**
      * 传给 {@code HarnessAgent.Builder.toolsConfig} 的工具配置：只含一份 deny 名单。
      *
-     * <p>传入显式配置还有一个作用：2.0.4 在没有显式配置时会去读工作区里的 {@code tools.json}，
+     * <p>传入显式配置还有一个作用：AgentScope 在没有显式配置时会去读工作区里的 {@code tools.json}，
      * 其中可以声明要启动的 stdio MCP 服务。显式传入后不再读取那个文件，堵住这条绕过 MCP 传输限制的路。
      */
     public static io.agentscope.harness.agent.tools.ToolsConfig toolsConfig() {
@@ -104,7 +104,7 @@ public final class YokeSubagents {
      * 启动时的完整准备：安装随应用发布的声明文件，再扫描工作区里<b>实际存在</b>的全部声明文件做冲突检查。
      *
      * <p>只检查 classpath 里的文件不够：{@code yoke.workspace} 是持久目录，里面手放的、或旧版本遗留的
-     * {@code summarizer.md}、{@code general-purpose.md} 在 2.0.4 里「文件赢」，会静默替换代码声明和内置子 Agent。
+     * {@code summarizer.md}、{@code general-purpose.md} 在 AgentScope 里「文件赢」，会静默替换代码声明和内置子 Agent。
      * 所以以目录里实际的文件名为准；冲突直接启动失败。其余多出来的文件只记警告（它们会作为子 Agent 被加载）。
      */
     public static void prepareWorkspace(Path workspace, List<SubagentDeclaration> declarations) {
@@ -143,7 +143,7 @@ public final class YokeSubagents {
                 .collect(Collectors.toCollection(java.util.TreeSet::new));
         if (!clashes.isEmpty()) {
             throw new IllegalStateException("子 Agent id 重复：" + clashes + " 同时被 workspace/subagents/*.md 和代码或框架内置声明占用。"
-                    + "2.0.4 对此不报错，工作区文件会静默覆盖另一处，请改名或删掉其中一处");
+                    + "AgentScope 对此不报错，工作区文件会静默覆盖另一处，请改名或删掉其中一处");
         }
     }
 
