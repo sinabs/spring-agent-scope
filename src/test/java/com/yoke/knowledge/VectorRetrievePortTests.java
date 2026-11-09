@@ -45,6 +45,16 @@ class VectorRetrievePortTests {
     }
 
     @Test
+    void 低于最低相似度的片段不返回_问无关问题时检索不到() {
+        VectorRetrievePort port = new VectorRetrievePort(PASSAGES, new KeywordEmbedding());
+
+        // 查询里没有任何已知关键字，与所有片段的相似度都接近 0
+        assertThat(port.retrieve("今天吃什么", 3).block()).isEmpty();
+        // 只有相关的片段留下，不会为了凑够 K 条把无关的也带上
+        assertThat(port.retrieve("Redis", 3).block()).extracting(Passage::id).containsExactly("a");
+    }
+
+    @Test
     void 片段向量只算一次_之后每次检索只多一次查询向量化() {
         KeywordEmbedding embedding = new KeywordEmbedding();
         VectorRetrievePort port = new VectorRetrievePort(PASSAGES, embedding);

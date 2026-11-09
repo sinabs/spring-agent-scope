@@ -24,14 +24,26 @@ public final class VectorRetrievePort implements RetrievePort {
     /** 一次向量化请求最多带多少个片段。 */
     static final int BATCH_SIZE = 16;
 
+    /**
+     * 默认最低相似度：低于它的片段视为不相关，不返回。问和知识库无关的问题时应当检索不到，
+     * 而不是凑够 K 条无关资料让模型去引用。不同向量模型的分数分布不同，换模型时按需调整。
+     */
+    static final double DEFAULT_MIN_SCORE = 0.3;
+
     private final List<Passage> passages;
     private final EmbeddingClient embeddings;
+    private final double minScore;
 
     private Mono<List<double[]>> index;
 
     public VectorRetrievePort(List<Passage> passages, EmbeddingClient embeddings) {
+        this(passages, embeddings, DEFAULT_MIN_SCORE);
+    }
+
+    public VectorRetrievePort(List<Passage> passages, EmbeddingClient embeddings, double minScore) {
         this.passages = List.copyOf(passages);
         this.embeddings = embeddings;
+        this.minScore = minScore;
     }
 
     @Override
@@ -48,6 +60,7 @@ public final class VectorRetrievePort implements RetrievePort {
                 scored.add(new Scored(passages.get(i), cosine(queryVector, vectors.get(i))));
             }
             return scored.stream()
+                    .filter(item -> item.score() >= minScore)
                     .sorted(Comparator.comparingDouble(Scored::score).reversed())
                     .limit(topK)
                     .map(Scored::passage)

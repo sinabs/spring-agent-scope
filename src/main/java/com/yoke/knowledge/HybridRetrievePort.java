@@ -48,7 +48,7 @@ public final class HybridRetrievePort implements RetrievePort {
     public Mono<List<Passage>> retrieve(String query, int topK) {
         int candidates = Math.max(topK * CANDIDATE_FACTOR, 10);
         return Flux.fromIterable(channels)
-                .concatMap(channel -> channel.retrieve(query, candidates)
+                .flatMapSequential(channel -> channel.retrieve(query, candidates)
                         .defaultIfEmpty(List.of())
                         .map(Outcome::success)
                         .onErrorResume(error -> {

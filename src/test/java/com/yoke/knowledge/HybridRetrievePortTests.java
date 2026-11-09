@@ -35,6 +35,21 @@ class HybridRetrievePortTests {
     }
 
     @Test
+    void 两路检索并行执行_总耗时取决于最慢的一路而不是两路之和() {
+        RetrievePort slow = (query, topK) -> Mono.delay(java.time.Duration.ofMillis(500)).thenReturn(List.of(p("A")))
+                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        RetrievePort alsoSlow = (query, topK) -> Mono.delay(java.time.Duration.ofMillis(500)).thenReturn(List.of(p("B")));
+        RetrievePort hybrid = new HybridRetrievePort(List.of(slow, alsoSlow));
+
+        long start = System.nanoTime();
+        List<Passage> result = hybrid.retrieve("q", 2).block();
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+
+        assertThat(result).extracting(Passage::id).containsExactlyInAnyOrder("A", "B");
+        assertThat(elapsedMillis).isLessThan(900);
+    }
+
+    @Test
     void RRF得分使用常数60() {
         assertThat(HybridRetrievePort.RRF_K).isEqualTo(60);
         // 第 1 名对第 2 名的优势是 1/61 - 1/62；只有一路时直接保持原顺序
