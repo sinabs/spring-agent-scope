@@ -17,6 +17,14 @@ class RetrieveToolTests {
             new Passage("b", "工具与权限", "工具与权限 / 模型能用哪些工具\n有 calculate"));
 
     @Test
+    void 工具说明要求用户明确让查知识库时必须调用_不能没查就说没有() throws NoSuchMethodException {
+        String description = RetrieveTool.class.getMethod("retrieve", String.class, Integer.class)
+                .getAnnotation(io.agentscope.core.tool.Tool.class).description();
+
+        assertThat(description).contains("明确要求查知识库").contains("必须调用").contains("不能没查就说知识库里没有");
+    }
+
+    @Test
     void 结果带编号和来源_方便模型按编号引用() {
         RetrieveTool tool = new RetrieveTool((query, topK) -> Mono.just(HITS));
 

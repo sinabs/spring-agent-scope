@@ -42,7 +42,7 @@ public class RetrieveTool {
 
     @Tool(name = "retrieve",
             description = "当问题涉及 Yoke 自身的设计、配置、接口或使用方法，而你不确定答案时调用，先查资料再回答；"
-                    + "闲聊、通用常识和计算不要调用。返回带 [1][2] 编号的资料片段，回答时请用相同的编号标注引用来源。"
+                    + "用户明确要求查知识库或资料时必须调用，不能没查就说知识库里没有；闲聊、通用常识和计算不要调用。返回带 [1][2] 编号的资料片段，回答时请用相同的编号标注引用来源。"
                     + "查不到时如实告诉用户，不要编造。")
     public Mono<String> retrieve(
             @ToolParam(name = "query", description = "要查的问题或关键词，用完整的短句，例如「会话历史存在哪里」") String query,
