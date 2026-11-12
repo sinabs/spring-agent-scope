@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import com.yoke.controller.ChatController;
 import com.yoke.knowledge.retrieve.KeywordRetrievePort;
@@ -113,7 +114,9 @@ class ToolConversationTests {
         List<Map<String, Object>> events = stream(controller, "s-r", "历史存哪");
 
         String output = resultOf(events);
-        assertThat(output).containsPattern("\\[[\\w-]+\\.md#[0-9a-f]{8}\\] 来源：").contains("Redis").doesNotContain("[1]").doesNotContain("[2]");
+        // 模型要的是 top_k=2，结果里正好两条带编号的资料，少了多了都说明条数没有传到检索端口
+        assertThat(Pattern.compile("\\[[\\w-]+\\.md#[0-9a-f]{8}] 来源：").matcher(output).results().count()).isEqualTo(2);
+        assertThat(output).contains("Redis").doesNotContain("[1]").doesNotContain("[2]");
     }
 
     @Test
