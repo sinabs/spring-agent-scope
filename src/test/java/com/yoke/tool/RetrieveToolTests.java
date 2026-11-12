@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 import com.yoke.knowledge.KnowledgeCorpus;
@@ -49,7 +50,7 @@ class RetrieveToolTests {
 
     @Test
     void 结果带编号和来源_方便模型按编号引用() {
-        RetrieveTool tool = new RetrieveTool((query, topK) -> Mono.just(HITS));
+        RetrieveTool tool = new RetrieveTool((_, _) -> Mono.just(HITS));
 
         String result = tool.retrieve("历史", 3).block();
 
@@ -65,9 +66,7 @@ class RetrieveToolTests {
         Passage shared = new Passage("api.md#2", "接口使用", "接口使用 / 普通对话\n发送 JSON");
         Passage onlyFirst = new Passage("mcp.md#1", "工具与权限", "工具与权限 / 接入 MCP\n只允许 HTTP");
         Passage onlySecond = new Passage("redis.md#0", "会话与存储", "会话与存储 / Redis\n历史放在 Redis");
-        List<List<Passage>> answers = List.of(List.of(onlyFirst, shared), List.of(onlySecond, shared));
-        java.util.concurrent.atomic.AtomicInteger call = new java.util.concurrent.atomic.AtomicInteger();
-        RetrieveTool tool = new RetrieveTool((query, topK) -> Mono.just(answers.get(call.getAndIncrement())));
+        RetrieveTool tool = answering(List.of(List.of(onlyFirst, shared), List.of(onlySecond, shared)));
 
         String first = tool.retrieve("q1", 3).block();
         String second = tool.retrieve("q2", 3).block();
@@ -87,10 +86,16 @@ class RetrieveToolTests {
         assertThat(Set.copyOf(labels)).hasSize(3);
     }
 
+    /** 第 n 次检索返回 answers 里的第 n 组结果。 */
+    private static RetrieveTool answering(List<List<Passage>> answers) {
+        AtomicInteger call = new AtomicInteger();
+        return new RetrieveTool((_, _) -> Mono.just(answers.get(call.getAndIncrement())));
+    }
+
     @Test
     void topK不传用默认值_传大了被钳制到上限_传小了至少为1() {
         List<Integer> requested = new ArrayList<>();
-        RetrieveTool tool = new RetrieveTool((query, topK) -> {
+        RetrieveTool tool = new RetrieveTool((_, topK) -> {
             requested.add(topK);
             return Mono.just(List.of());
         });
@@ -108,7 +113,7 @@ class RetrieveToolTests {
     @Test
     void 过长的问题被截断后再检索() {
         List<String> queries = new ArrayList<>();
-        RetrieveTool tool = new RetrieveTool((query, topK) -> {
+        RetrieveTool tool = new RetrieveTool((query, _) -> {
             queries.add(query);
             return Mono.just(List.of());
         });
@@ -120,7 +125,7 @@ class RetrieveToolTests {
 
     @Test
     void 没有命中时明确告诉模型不要编造() {
-        RetrieveTool tool = new RetrieveTool((query, topK) -> Mono.just(List.of()));
+        RetrieveTool tool = new RetrieveTool((_, _) -> Mono.just(List.of()));
 
         assertThat(tool.retrieve("量子纠缠", 3).block()).contains("没有检索到").contains("不要编造");
     }
@@ -134,7 +139,7 @@ class RetrieveToolTests {
 
     @Test
     void 空问题返回提示而不触发检索() {
-        RetrievePort unreachable = (query, topK) -> {
+        RetrievePort unreachable = (_, _) -> {
             throw new AssertionError("不应该被调用");
         };
         RetrieveTool tool = new RetrieveTool(unreachable);
@@ -145,7 +150,7 @@ class RetrieveToolTests {
 
     @Test
     void 检索失败时只返回通用提示_不泄漏上游细节() {
-        RetrieveTool tool = new RetrieveTool((query, topK) -> Mono.error(new IllegalStateException("连接 10.0.0.8:443 被拒绝")));
+        RetrieveTool tool = new RetrieveTool((_, _) -> Mono.error(new IllegalStateException("连接 10.0.0.8:443 被拒绝")));
 
         String result = tool.retrieve("q", 3).block();
 

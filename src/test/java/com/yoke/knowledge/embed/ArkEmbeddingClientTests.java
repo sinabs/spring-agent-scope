@@ -88,7 +88,7 @@ class ArkEmbeddingClientTests {
         responseBody = """
                 {"data":[{"index":0,"embedding":[1.0,0.0]}]}""";
 
-        assertThat(client(null).embed(List.of("x")).block().getFirst()).containsExactly(1.0, 0.0);
+        assertThat(client(null).embed(List.of("x")).blockOptional().orElseThrow().getFirst()).containsExactly(1.0, 0.0);
     }
 
     @Test

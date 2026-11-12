@@ -2,11 +2,11 @@ package com.yoke.config;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -92,7 +92,7 @@ public final class YokeSubagents {
             Path target = workspace.resolve(WORKSPACE_DIR);
             Files.createDirectories(target);
             for (Resource resource : resources) {
-                Files.write(target.resolve(resource.getFilename()), resource.getInputStream().readAllBytes());
+                Files.write(target.resolve(fileName(resource)), resource.getInputStream().readAllBytes());
             }
             return Arrays.stream(resources).map(YokeSubagents::agentId).collect(Collectors.toUnmodifiableSet());
         } catch (IOException e) {
@@ -148,7 +148,13 @@ public final class YokeSubagents {
     }
 
     private static String agentId(Resource resource) {
-        String name = resource.getFilename();
+        String name = fileName(resource);
         return name.substring(0, name.length() - ".md".length());
+    }
+
+    /** 按 *.md 通配找到的资源一定有文件名；真取不到时报出是哪个资源，而不是空指针。 */
+    private static String fileName(Resource resource) {
+        return Optional.ofNullable(resource.getFilename())
+                .orElseThrow(() -> new IllegalStateException("子 Agent 声明文件没有文件名：" + resource.getDescription()));
     }
 }

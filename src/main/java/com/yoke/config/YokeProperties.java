@@ -120,7 +120,7 @@ public record YokeProperties(
 
             /** 密钥不进日志和调试输出。 */
             @Override
-            public String toString() {
+            public @NonNull String toString() {
                 return "Embedding[modelName=" + modelName + ", baseUrl=" + baseUrl + ", apiKey="
                         + (StrUtil.isNotBlank(apiKey) ? "***" : null) + ", dimensions=" + dimensions + ", protocol=" + protocol + "]";
             }
@@ -189,7 +189,7 @@ public record YokeProperties(
 
         /** 地址和请求头里可能带令牌：toString 只留协议、主机和端口，请求头只列名字。 */
         @Override
-        public String toString() {
+        public @NonNull String toString() {
             String origin;
             try {
                 URI uri = URI.create(url);

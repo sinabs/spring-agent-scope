@@ -74,7 +74,7 @@ class ToolConversationTests {
         assertThat(types.getLast()).isEqualTo("RUN_FINISHED");
         // 结果真的回填给了模型：第二次调用的输入里带着工具结果，模型据此作答
         assertThat(AguiTestSupport.text(events)).contains("工具说：").contains("12");
-        assertThat(model.calls.stream().filter(c -> c.hasToolResult()).findFirst().orElseThrow().lastToolResultText()).contains("12");
+        assertThat(model.calls.stream().filter(ScriptedModel.Call::hasToolResult).findFirst().orElseThrow().lastToolResultText()).contains("12");
     }
 
     @Test
@@ -82,7 +82,7 @@ class ToolConversationTests {
         ScriptedModel model = script("calculate", Map.of("expression", "1 / 0"));
         ChatController controller = controller(model, workspace, template());
 
-        ChatResponse response = controller.chat(new ChatRequest("s-err", "算 1/0")).block(Duration.ofSeconds(30));
+        ChatResponse response = controller.chat(new ChatRequest("s-err", "算 1/0")).blockOptional(Duration.ofSeconds(30)).orElseThrow();
 
         // 工具把错误作为文本返回给模型，由模型转述；而不是让整次对话失败
         assertThat(response.reply()).contains("无法计算：除数不能为 0");
@@ -95,8 +95,8 @@ class ToolConversationTests {
         ChatController controller = controller(model, workspace, template());
 
         // 流式接口固定归属 default 用户，要指定 userId 只能走 /api/chat；脚本模型把工具结果原样放进回复
-        String alice = controller.chat(new ChatRequest("s-a", "我的笔记", "alice")).block(Duration.ofSeconds(30)).reply();
-        String fallback = controller.chat(new ChatRequest("s-d", "我的笔记")).block(Duration.ofSeconds(30)).reply();
+        String alice = controller.chat(new ChatRequest("s-a", "我的笔记", "alice")).blockOptional(Duration.ofSeconds(30)).orElseThrow().reply();
+        String fallback = controller.chat(new ChatRequest("s-d", "我的笔记")).blockOptional(Duration.ofSeconds(30)).orElseThrow().reply();
 
         assertThat(alice).contains("alice").contains("MCP").doesNotContain("Redis");
         assertThat(fallback).contains("default").contains("Redis").doesNotContain("MCP");

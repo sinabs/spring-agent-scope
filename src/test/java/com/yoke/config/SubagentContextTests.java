@@ -39,7 +39,7 @@ class SubagentContextTests {
         controller.chat(new ChatRequest("sub-ctx", "让子 Agent 查我的笔记", "alice")).block();
 
         String subReply = model.calls.stream().filter(call -> !call.systemText().startsWith("你是测试助手"))
-                .filter(call -> call.hasToolResult()).map(ScriptedModel.Call::lastToolResultText).findFirst().orElseThrow();
+                .filter(ScriptedModel.Call::hasToolResult).map(ScriptedModel.Call::lastToolResultText).findFirst().orElseThrow();
         assertThat(subReply).contains("alice");
     }
 }

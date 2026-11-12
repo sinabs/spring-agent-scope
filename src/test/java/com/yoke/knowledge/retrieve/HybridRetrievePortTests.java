@@ -18,11 +18,11 @@ class HybridRetrievePortTests {
     }
 
     private static RetrievePort returning(Passage... passages) {
-        return (query, topK) -> Mono.just(List.of(passages));
+        return (_, _) -> Mono.just(List.of(passages));
     }
 
     private static RetrievePort failing() {
-        return (query, topK) -> Mono.error(new IllegalStateException("向量化服务超时"));
+        return (_, _) -> Mono.error(new IllegalStateException("向量化服务超时"));
     }
 
     @Test
@@ -38,9 +38,9 @@ class HybridRetrievePortTests {
 
     @Test
     void 两路检索并行执行_总耗时取决于最慢的一路而不是两路之和() {
-        RetrievePort slow = (query, topK) -> Mono.delay(java.time.Duration.ofMillis(500)).thenReturn(List.of(p("A")))
+        RetrievePort slow = (_, _) -> Mono.delay(java.time.Duration.ofMillis(500)).thenReturn(List.of(p("A")))
                 .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
-        RetrievePort alsoSlow = (query, topK) -> Mono.delay(java.time.Duration.ofMillis(500)).thenReturn(List.of(p("B")));
+        RetrievePort alsoSlow = (_, _) -> Mono.delay(java.time.Duration.ofMillis(500)).thenReturn(List.of(p("B")));
         RetrievePort hybrid = new HybridRetrievePort(List.of(slow, alsoSlow));
 
         long start = System.nanoTime();
@@ -111,7 +111,7 @@ class HybridRetrievePortTests {
     @Test
     void 失败的一路不会拖累成功的一路被调用() {
         AtomicInteger calls = new AtomicInteger();
-        RetrievePort counting = (query, topK) -> {
+        RetrievePort counting = (_, _) -> {
             calls.incrementAndGet();
             return Mono.just(List.of(p("K")));
         };
@@ -124,7 +124,7 @@ class HybridRetrievePortTests {
     @Test
     void 每一路取的候选比最终topK更宽() {
         AtomicInteger requested = new AtomicInteger();
-        RetrievePort spy = (query, topK) -> {
+        RetrievePort spy = (_, topK) -> {
             requested.set(topK);
             return Mono.just(List.of());
         };

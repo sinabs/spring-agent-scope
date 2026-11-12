@@ -44,7 +44,7 @@ class SharedToolkitTests {
     void 连续多次请求之后模板里仍然只有Yoke自己的工具(@TempDir Path workspace) {
         Toolkit template = template();
         Set<String> before = new TreeSet<>(template.getToolNames());
-        ScriptedModel model = new ScriptedModel(call -> ScriptedModel.text("ok"));
+        ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("ok"));
         HarnessAgentFactory factory = TestAgents.factory(model, workspace, template);
 
         for (int i = 0; i < 3; i++) {
@@ -63,7 +63,7 @@ class SharedToolkitTests {
 
     @Test
     void 并发地用同一个模板构建Agent_每个Agent看到的工具清单都完整一致(@TempDir Path workspace) throws Exception {
-        ScriptedModel model = new ScriptedModel(call -> ScriptedModel.text("ok"));
+        ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("ok"));
         HarnessAgentFactory factory = TestAgents.factory(model, workspace, template());
         int workers = 16;
 

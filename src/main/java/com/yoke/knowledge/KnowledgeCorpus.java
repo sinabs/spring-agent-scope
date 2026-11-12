@@ -118,14 +118,19 @@ public final class KnowledgeCorpus {
         StringBuilder chunk = new StringBuilder();
         for (String paragraph : text.split("\\n\\s*\\n")) {
             if (!chunk.isEmpty() && chunk.length() + paragraph.length() > MAX_CHUNK_LENGTH) {
-                passages.add(passage(docId, title, heading + "\n" + chunk.toString().strip()));
+                passages.add(chunkPassage(docId, title, heading, chunk));
                 chunk.setLength(0);
             }
             chunk.append(paragraph.strip()).append("\n\n");
         }
         if (!chunk.isEmpty()) {
-            passages.add(passage(docId, title, heading + "\n" + chunk.toString().strip()));
+            passages.add(chunkPassage(docId, title, heading, chunk));
         }
+    }
+
+    /** 片段正文前面带上「文档标题 / 小节标题」。 */
+    private static Passage chunkPassage(String docId, String title, String heading, StringBuilder chunk) {
+        return passage(docId, title, heading + "\n" + chunk.toString().strip());
     }
 
     /**

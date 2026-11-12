@@ -43,7 +43,7 @@ class ToolsEndToEndTests extends RedisIntegrationTest {
                     return ScriptedModel.text("[]");
                 }
                 String question = call.messages().stream().filter(m -> m.getRole() == io.agentscope.core.message.MsgRole.USER)
-                        .map(io.agentscope.core.message.Msg::getTextContent).reduce("", (a, b) -> b);
+                        .map(io.agentscope.core.message.Msg::getTextContent).reduce("", (_, b) -> b);
                 if (call.hasToolResult()) {
                     return ScriptedModel.text("据资料：" + call.lastToolResultText());
                 }
@@ -90,7 +90,7 @@ class ToolsEndToEndTests extends RedisIntegrationTest {
         assertThat(AguiTestSupport.toolArguments(events)).contains("对话历史存在哪里").contains("\"top_k\":2");
         assertThat(result.get("toolCallId")).isEqualTo(call.get("toolCallId"));
         assertThat(events.indexOf(call)).as("工具调用先于工具结果").isLessThan(events.indexOf(result));
-        assertThat(String.valueOf(result.get("content"))).containsPattern("\\[[\\w-]+\\.md#[0-9a-f]{8}\\] 来源：").contains("Redis").doesNotContain("尚未配置");
+        assertThat(String.valueOf(result.get("content"))).containsPattern("\\[[\\w-]+\\.md#[0-9a-f]{8}] 来源：").contains("Redis").doesNotContain("尚未配置");
         assertThat(events.getLast().get("type")).isEqualTo("RUN_FINISHED");
     }
 
@@ -112,7 +112,7 @@ class ToolsEndToEndTests extends RedisIntegrationTest {
     void 请求里的userId在真实装配下传到了工具() {
         // 流式接口固定归属 default 用户，指定 userId 只能走 /api/chat；脚本模型把工具结果放进回复
         String reply = controller.chat(new ChatRequest("e2e-a-" + System.nanoTime(), "我的笔记", "alice"))
-                .block(Duration.ofSeconds(60)).reply();
+                .blockOptional(Duration.ofSeconds(60)).orElseThrow().reply();
 
         assertThat(reply).contains("alice").contains("MCP");
     }

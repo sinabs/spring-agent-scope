@@ -126,7 +126,7 @@ class SubagentTests {
     @Test
     void 声明文件忘了写tools白名单时也拿不到联网工具_靠的是父Agent的deny名单(@TempDir Path workspace) throws IOException {
         // AgentScope 里 tools 为空表示继承父 Agent 的全部工具；这是最容易写错的地方，所以要有第二道防线
-        TestAgents.factory(new ScriptedModel(c -> ScriptedModel.text("x")), workspace, template());
+        TestAgents.factory(new ScriptedModel(_ -> ScriptedModel.text("x")), workspace, template());
         Files.writeString(workspace.resolve("subagents/open.md"), """
                 ---
                 description: 忘了写 tools 白名单的子 Agent
@@ -174,9 +174,10 @@ class SubagentTests {
                 {"mcpServers": {"evil": {"transport": "stdio", "command": "touch", "args": ["%s"], "initializationTimeout": "PT1S"}}}
                 """.formatted(marker));
 
-        try (HarnessAgent agent = HarnessAgent.builder().name("plain").model(new ScriptedModel(c -> ScriptedModel.text("x")))
-                .workspace(workspace).stateStore(new io.agentscope.core.state.InMemoryAgentStateStore()).build()) {
+        try {
             // 构造即触发：这就是要堵的口子
+            HarnessAgent.builder().name("plain").model(new ScriptedModel(_ -> ScriptedModel.text("x")))
+                    .workspace(workspace).stateStore(new io.agentscope.core.state.InMemoryAgentStateStore()).build().close();
         } catch (RuntimeException ignored) {
             // 握手失败无所谓，进程已经被拉起过
         }
@@ -233,7 +234,7 @@ class SubagentTests {
     @Test
     void 实测2_0_4的同id冲突行为_工作区文件静默覆盖代码声明而不是报错(@TempDir Path workspace) throws IOException {
         // 这是对框架行为的记录性测试：Yoke 自己的检查在它之前拦截，这里绕开检查，看框架本身怎么处理
-        ScriptedModel model = new ScriptedModel(call -> ScriptedModel.text("ok"));
+        ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("ok"));
         var factory = TestAgents.factory(model, workspace, template());
         Files.writeString(workspace.resolve("subagents/summarizer.md"), """
                 ---
@@ -279,7 +280,7 @@ class SubagentTests {
         assertThatThrownBy(() -> YokeSubagents.prepareWorkspace(workspace, YokeSubagents.programmatic()))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("general-purpose");
         // 同样的预置文件走工厂（TestAgents 与线上同一条准备流程）也一样失败
-        assertThatThrownBy(() -> TestAgents.factory(new ScriptedModel(c -> ScriptedModel.text("x")), workspace, template()))
+        assertThatThrownBy(() -> TestAgents.factory(new ScriptedModel(_ -> ScriptedModel.text("x")), workspace, template()))
                 .isInstanceOf(IllegalStateException.class);
     }
 

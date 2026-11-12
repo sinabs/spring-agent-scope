@@ -106,11 +106,11 @@ class ChatToolsTests {
         return toolkit;
     }
 
-    private static String call(Toolkit toolkit, String name, Map<String, Object> input, RuntimeContext context) {
+    private static String callNotes(Toolkit toolkit, Map<String, Object> input, RuntimeContext context) {
         // Toolkit 校验入参时读的是 content 里的原始 JSON，所以和 input 一起给
-        ToolUseBlock use = ToolUseBlock.builder().id("c1").name(name).input(input).content(json(input)).build();
+        ToolUseBlock use = ToolUseBlock.builder().id("c1").name("list_my_notes").input(input).content(json(input)).build();
         ToolResultBlock result = toolkit.callTool(ToolCallParam.builder()
-                .toolUseBlock(use).input(input).runtimeContext(context).build()).block();
+                .toolUseBlock(use).input(input).runtimeContext(context).build()).blockOptional().orElseThrow();
         return result.getOutput().stream().filter(TextBlock.class::isInstance)
                 .map(block -> ((TextBlock) block).getText()).reduce("", String::concat);
     }
@@ -141,7 +141,7 @@ class ChatToolsTests {
         RuntimeContext alice = RuntimeContext.builder().userId("alice").put(UserContext.class, new UserContext("alice")).build();
 
         // 模型即便硬塞一个 userId 参数，也不会生效
-        String result = call(toolkit, "list_my_notes", Map.of("limit", 5, "userId", "default", "user", Map.of("userId", "default")), alice);
+        String result = callNotes(toolkit, Map.of("limit", 5, "userId", "default", "user", Map.of("userId", "default")), alice);
 
         assertThat(result).contains("alice").contains("MCP").doesNotContain("Redis");
     }
@@ -152,13 +152,13 @@ class ChatToolsTests {
         RuntimeContext alice = RuntimeContext.builder().put(UserContext.class, new UserContext("alice")).build();
         RuntimeContext other = RuntimeContext.builder().put(UserContext.class, new UserContext("default")).build();
 
-        assertThat(call(toolkit, "list_my_notes", Map.of(), alice)).contains("MCP");
-        assertThat(call(toolkit, "list_my_notes", Map.of(), other)).contains("Redis");
+        assertThat(callNotes(toolkit, Map.of(), alice)).contains("MCP");
+        assertThat(callNotes(toolkit, Map.of(), other)).contains("Redis");
     }
 
     @Test
     void 上下文里没有放UserContext时工具拒绝服务() {
-        String result = call(toolkit(tools), "list_my_notes", Map.of(), RuntimeContext.builder().userId("alice").build());
+        String result = callNotes(toolkit(tools), Map.of(), RuntimeContext.builder().userId("alice").build());
 
         assertThat(result).contains("无法确定当前用户");
     }
@@ -173,7 +173,7 @@ class ChatToolsTests {
                 jobs.add(() -> {
                     RuntimeContext context = RuntimeContext.builder()
                             .put(UserContext.class, new UserContext(alice ? "alice" : "default")).build();
-                    String out = call(toolkit, "list_my_notes", Map.of(), context);
+                    String out = callNotes(toolkit, Map.of(), context);
                     return alice ? out.contains("MCP") && !out.contains("Redis") : out.contains("Redis") && !out.contains("MCP");
                 });
             }

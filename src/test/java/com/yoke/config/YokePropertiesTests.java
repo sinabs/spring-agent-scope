@@ -125,7 +125,7 @@ class YokePropertiesTests {
         List<YokeProperties.McpServer> servers = bind(properties).mcp().servers();
 
         assertThat(servers).extracting(YokeProperties.McpServer::name).containsExactly("docs", "legacy");
-        assertThat(servers.get(0).transport()).isEqualTo("streamable-http");
+        assertThat(servers.getFirst().transport()).isEqualTo("streamable-http");
         assertThat(servers.get(0).timeout()).isEqualTo(java.time.Duration.ofSeconds(30));
         assertThat(servers.get(0).headers()).containsEntry("Authorization", "Bearer t");
         assertThat(servers.get(1).timeout()).isEqualTo(java.time.Duration.ofSeconds(5));

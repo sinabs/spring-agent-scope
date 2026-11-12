@@ -9,6 +9,7 @@ import com.yoke.config.YokeProperties;
 import com.yoke.support.McpTestServer;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -35,13 +36,13 @@ class McpConnectionsTests {
         server.close();
     }
 
-    private YokeProperties.McpServer server(String name, Map<String, String> headers) {
-        return new YokeProperties.McpServer(name, "streamable-http", server.url(), Duration.ofSeconds(10), headers);
+    private YokeProperties.McpServer server(Map<String, String> headers) {
+        return new YokeProperties.McpServer("demo", "streamable-http", server.url(), Duration.ofSeconds(10), headers);
     }
 
     @Test
     void 真实握手后工具以服务端公布的原名注册_不加前缀() {
-        try (McpConnections connections = McpConnections.connect(List.of(server("demo", Map.of())))) {
+        try (McpConnections connections = McpConnections.connect(List.of(server(Map.of())))) {
             Toolkit toolkit = new Toolkit();
             connections.registerInto(toolkit);
 
@@ -52,7 +53,7 @@ class McpConnectionsTests {
 
     @Test
     void MCP工具与已有工具重名时启动失败_不让外部服务顶替内置工具() {
-        try (McpConnections connections = McpConnections.connect(List.of(server("demo", Map.of())))) {
+        try (McpConnections connections = McpConnections.connect(List.of(server(Map.of())))) {
             Toolkit toolkit = new Toolkit();
             toolkit.registerTool(new Object() {
                 @io.agentscope.core.tool.Tool(name = "echo", description = "内置同名工具")
@@ -68,13 +69,13 @@ class McpConnectionsTests {
 
     @Test
     void 未声明只读的工具不会注册进Toolkit_只读的才会() {
-        try (McpConnections connections = McpConnections.connect(List.of(server("demo", Map.of())))) {
+        try (McpConnections connections = McpConnections.connect(List.of(server(Map.of())))) {
             Toolkit toolkit = new Toolkit();
             connections.registerInto(toolkit);
 
             // 服务端公布了 echo（只读）和 write_note（未声明），后者模型根本看不到
             assertThat(toolkit.getToolNames()).contains("echo").doesNotContain("write_note");
-            assertThat(toolkit.getToolSchemas()).extracting(schema -> schema.getName()).doesNotContain("write_note");
+            assertThat(toolkit.getToolSchemas()).extracting(ToolSchema::getName).doesNotContain("write_note");
             assertThat(server.writeNoteCalls).hasValue(0);
         }
     }
@@ -95,13 +96,13 @@ class McpConnectionsTests {
 
     @Test
     void 注册进Toolkit的MCP工具可以被真实调用() {
-        try (McpConnections connections = McpConnections.connect(List.of(server("demo", Map.of())))) {
+        try (McpConnections connections = McpConnections.connect(List.of(server(Map.of())))) {
             Toolkit toolkit = new Toolkit();
             connections.registerInto(toolkit);
             Map<String, Object> input = Map.of("text", "你好");
             ToolUseBlock use = ToolUseBlock.builder().id("c1").name("echo").input(input).content("{\"text\":\"你好\"}").build();
 
-            var result = toolkit.callTool(ToolCallParam.builder().toolUseBlock(use).input(input).build()).block();
+            var result = toolkit.callTool(ToolCallParam.builder().toolUseBlock(use).input(input).build()).blockOptional().orElseThrow();
 
             assertThat(result.getOutput()).filteredOn(TextBlock.class::isInstance)
                     .extracting(block -> ((TextBlock) block).getText()).containsExactly("echo: 你好");
@@ -110,7 +111,7 @@ class McpConnectionsTests {
 
     @Test
     void 配置里的请求头会带到服务端() {
-        try (McpConnections ignored = McpConnections.connect(List.of(server("demo", Map.of("Authorization", "Bearer secret-token"))))) {
+        try (McpConnections ignored = McpConnections.connect(List.of(server(Map.of("Authorization", "Bearer secret-token"))))) {
             assertThat(server.receivedHeaders).isNotEmpty()
                     .allSatisfy(headers -> assertThat(headers).containsEntry("authorization", "Bearer secret-token"));
         }
@@ -118,7 +119,7 @@ class McpConnectionsTests {
 
     @Test
     void 工具副本不拥有连接_副本被丢弃后连接仍可用() {
-        try (McpConnections connections = McpConnections.connect(List.of(server("demo", Map.of())))) {
+        try (McpConnections connections = McpConnections.connect(List.of(server(Map.of())))) {
             Toolkit template = new Toolkit();
             connections.registerInto(template);
             Toolkit copy = template.copy();
@@ -128,7 +129,7 @@ class McpConnectionsTests {
 
             Map<String, Object> input = Map.of("text", "还在");
             ToolUseBlock use = ToolUseBlock.builder().id("c2").name("echo").input(input).content("{\"text\":\"还在\"}").build();
-            var result = template.callTool(ToolCallParam.builder().toolUseBlock(use).input(input).build()).block();
+            var result = template.callTool(ToolCallParam.builder().toolUseBlock(use).input(input).build()).blockOptional().orElseThrow();
             assertThat(((TextBlock) result.getOutput().getFirst()).getText()).isEqualTo("echo: 还在");
         }
     }
@@ -238,11 +239,12 @@ class McpConnectionsTests {
     @Test
     void 某个连接关不掉不影响其余连接被关闭_且异常不被吞掉() {
         List<String> closed = new ArrayList<>();
-        McpConnections connections = McpConnections.connect(List.of(cfg("a"), cfg("b"), cfg("c")),
+        try (McpConnections connections = McpConnections.connect(List.of(cfg("a"), cfg("b"), cfg("c")),
                 s -> new FakeClient(s.name(), closed, Mono.empty(),
-                        s.name().equals("b") ? new IllegalStateException("b 关闭失败") : null));
-
-        assertThatThrownBy(connections::close).hasMessage("b 关闭失败");
+                        s.name().equals("b") ? new IllegalStateException("b 关闭失败") : null))) {
+            // 第一次关闭后连接列表已清空，try 结束时的自动关闭什么都不做
+            assertThatThrownBy(connections::close).hasMessage("b 关闭失败");
+        }
 
         assertThat(closed).containsExactly("c", "b", "a");
     }
@@ -256,7 +258,7 @@ class McpConnectionsTests {
             case "a" -> new FakeClient("a", closed, Mono.empty(), null);
             case "b" -> new FakeClient("b", closed, Mono.empty(), closeFailure);
             default -> new FakeClient("c", closed, Mono.error(new IllegalStateException("连接被拒绝")), null);
-        }))
+        }).close())
                 // 主异常是「c 连不上」，不是关闭 b 时的失败
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("无法连接 MCP 服务").hasMessageContaining("name=c")
@@ -274,7 +276,7 @@ class McpConnectionsTests {
         YokeProperties.McpServer unreachable = new YokeProperties.McpServer("bad", "streamable-http",
                 "http://127.0.0.1:1/mcp?token=super-secret", Duration.ofSeconds(2), Map.of());
 
-        assertThatThrownBy(() -> McpConnections.connect(List.of(unreachable)))
+        assertThatThrownBy(() -> McpConnections.connect(List.of(unreachable)).close())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("无法连接 MCP 服务").hasMessageContaining("name=bad")
                 .satisfies(e -> assertThat(e.getMessage()).doesNotContain("super-secret"));

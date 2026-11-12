@@ -3,6 +3,8 @@ package com.yoke.knowledge.retrieve;
 import com.yoke.knowledge.EmbeddingClient;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.yoke.model.Passage;
@@ -72,15 +74,19 @@ class VectorRetrievePortTests {
 
     @Test
     void 预建索引在后台完成_之后的检索只需要向量化查询() throws InterruptedException {
-        KeywordEmbedding embedding = new KeywordEmbedding();
+        CountDownLatch indexed = new CountDownLatch(1);
+        KeywordEmbedding embedding = new KeywordEmbedding() {
+            @Override
+            public synchronized Mono<List<double[]>> embed(List<String> texts) {
+                return super.embed(texts).doOnSuccess(_ -> indexed.countDown());
+            }
+        };
         VectorRetrievePort port = new VectorRetrievePort(PASSAGES, embedding);
 
         port.warmUp();
         // 预建在 boundedElastic 上跑，warmUp 本身立即返回；等它把片段向量算完
-        for (int i = 0; i < 100 && embedding.calls.get() == 0; i++) {
-            Thread.sleep(20);
-        }
-        assertThat(embedding.calls).as("还没有任何检索，片段已经向量化").hasValue(1);
+        assertThat(indexed.await(5, TimeUnit.SECONDS)).as("还没有任何检索，片段已经向量化").isTrue();
+        assertThat(embedding.calls).hasValue(1);
 
         port.retrieve("Redis", 1).block();
         assertThat(embedding.calls).as("检索时只多一次查询向量化").hasValue(2);
@@ -126,7 +132,7 @@ class VectorRetrievePortTests {
 
     @Test
     void 向量化返回条数不对时报错() {
-        EmbeddingClient broken = texts -> Mono.just(List.of(new double[] {1}));
+        EmbeddingClient broken = _ -> Mono.just(List.of(new double[] {1}));
         VectorRetrievePort port = new VectorRetrievePort(PASSAGES, broken);
 
         assertThatThrownBy(() -> port.retrieve("Redis", 1).block()).hasMessageContaining("不一致");

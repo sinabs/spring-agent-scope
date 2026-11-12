@@ -57,11 +57,12 @@ public class ChatTools {
     public String getCurrentTime(
             @ToolParam(name = "timezone", required = false,
                     description = "IANA 时区名，例如 Asia/Shanghai、America/New_York；不传时用 UTC") String timezone) {
+        String requested = Optional.ofNullable(timezone).filter(StrUtil::isNotBlank).map(String::trim).orElse("UTC");
         ZoneId zone;
         try {
-            zone = ZoneId.of(Optional.ofNullable(timezone).filter(StrUtil::isNotBlank).map(String::trim).orElse("UTC"));
+            zone = ZoneId.of(requested);
         } catch (DateTimeException e) {
-            return "无法识别的时区：" + abbreviate(timezone) + "。请使用 IANA 时区名，例如 Asia/Shanghai。";
+            return "无法识别的时区：" + abbreviate(requested) + "。请使用 IANA 时区名，例如 Asia/Shanghai。";
         }
         ZonedDateTime now = ZonedDateTime.ofInstant(Instant.now(clock), zone);
         return now.format(TIME_FORMAT) + "（" + zone.getId() + "，" + now.getDayOfWeek() + "）";

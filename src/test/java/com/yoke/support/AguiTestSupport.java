@@ -49,8 +49,8 @@ public final class AguiTestSupport {
 
     /** 走一遍流式接口，返回解析后的事件。流式接口固定归属 default 用户。 */
     public static List<Map<String, Object>> run(ChatController controller, String threadId, String text) {
-        return controller.stream(body(threadId, text)).map(ServerSentEvent::data)
-                .map(AguiTestSupport::read).collectList().block(Duration.ofSeconds(60));
+        return controller.stream(body(threadId, text)).mapNotNull(ServerSentEvent::data)
+                .map(AguiTestSupport::read).collectList().blockOptional(Duration.ofSeconds(60)).orElseThrow();
     }
 
     /** 某类型的第一个事件，没有就抛异常。 */
