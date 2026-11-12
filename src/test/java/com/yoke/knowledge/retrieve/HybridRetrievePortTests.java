@@ -1,8 +1,10 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.retrieve;
 
+import com.yoke.knowledge.RetrievePort;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.yoke.model.Passage;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 

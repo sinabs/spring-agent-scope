@@ -91,18 +91,28 @@ public record YokeProperties(
     public record Knowledge(@DefaultValue Embedding embedding) {
 
         /**
-         * 向量化服务（OpenAI 兼容的 {@code /embeddings} 接口），{@code modelName} 和 {@code apiKey} 都有值才启用。
+         * 向量化服务，{@code modelName} 和 {@code apiKey} 都有值才启用。
          *
          * @param modelName  向量模型名，例如 text-embedding-3-small；为空表示不启用向量检索
          * @param baseUrl    接口根地址，默认 OpenAI 官方；用 DashScope 等兼容服务时改它
          * @param apiKey     密钥，只从环境变量或外部配置提供，不要写进仓库
-         * @param dimensions 向量维度，可选；不传用模型默认值
+         * @param dimensions 向量维度，可选；不传用模型默认值。方舟多模态协议会校验返回的维度与它一致
+         * @param protocol   接口协议，默认 OpenAI 兼容的 {@code /embeddings}；火山方舟的多模态向量模型要选 ark-multimodal
          */
         public record Embedding(
                 String modelName,
                 @DefaultValue("https://api.openai.com/v1") String baseUrl,
                 String apiKey,
-                Integer dimensions) {
+                Integer dimensions,
+                @DefaultValue("openai") Protocol protocol) {
+
+            /** 向量化接口的协议。 */
+            public enum Protocol {
+                /** OpenAI 兼容的 {@code POST /embeddings}，支持批量。 */
+                OPENAI,
+                /** 火山方舟的 {@code POST /embeddings/multimodal}，一条文本一次请求。 */
+                ARK_MULTIMODAL
+            }
 
             public boolean enabled() {
                 return StrUtil.isNotBlank(modelName) && StrUtil.isNotBlank(apiKey);
@@ -112,7 +122,7 @@ public record YokeProperties(
             @Override
             public String toString() {
                 return "Embedding[modelName=" + modelName + ", baseUrl=" + baseUrl + ", apiKey="
-                        + (StrUtil.isNotBlank(apiKey) ? "***" : null) + ", dimensions=" + dimensions + "]";
+                        + (StrUtil.isNotBlank(apiKey) ? "***" : null) + ", dimensions=" + dimensions + ", protocol=" + protocol + "]";
             }
         }
     }

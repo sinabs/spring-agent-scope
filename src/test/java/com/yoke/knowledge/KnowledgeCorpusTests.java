@@ -2,6 +2,8 @@ package com.yoke.knowledge;
 
 import java.util.List;
 
+import com.yoke.knowledge.retrieve.KeywordRetrievePort;
+import com.yoke.model.Passage;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

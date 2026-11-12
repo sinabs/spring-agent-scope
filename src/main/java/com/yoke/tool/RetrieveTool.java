@@ -5,12 +5,11 @@ import java.util.Objects;
 import java.util.Optional;
 
 import cn.hutool.core.util.StrUtil;
-import com.yoke.knowledge.Passage;
+import com.yoke.model.Passage;
 import com.yoke.knowledge.RetrievePort;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
 /**
@@ -23,9 +22,8 @@ import reactor.core.publisher.Mono;
  * <p>返回值带 {@code [1][2]} 编号，模型回答时按编号引用，用户就能回头核对出处。
  * 无状态，线程安全；{@code port} 为空表示没有配置知识库，工具返回提示语而不是抛异常。
  */
+@Slf4j
 public class RetrieveTool {
-
-    private static final Logger log = LoggerFactory.getLogger(RetrieveTool.class);
 
     static final int DEFAULT_TOP_K = 3;
 

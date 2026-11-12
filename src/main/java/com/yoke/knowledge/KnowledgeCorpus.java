@@ -9,6 +9,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
+import com.yoke.model.Passage;
+import lombok.NoArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
@@ -19,12 +21,10 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  * 片段正文超过 {@link #MAX_CHUNK_LENGTH} 个字符时按段落再切。每个片段正文前面带上「文档标题 / 小节标题」，
  * 这样单看一个片段也知道它在讲什么。
  */
+@NoArgsConstructor(access = lombok.AccessLevel.PRIVATE)
 public final class KnowledgeCorpus {
 
     static final int MAX_CHUNK_LENGTH = 500;
-
-    private KnowledgeCorpus() {
-    }
 
     /** 读取 classpath 下的全部知识文档并切片；没有文档时返回空列表。 */
     public static List<Passage> loadFromClasspath(String pattern) {
@@ -78,13 +78,13 @@ public final class KnowledgeCorpus {
         String heading = Optional.ofNullable(section).map(name -> title + " / " + name).orElse(title);
         StringBuilder chunk = new StringBuilder();
         for (String paragraph : text.split("\\n\\s*\\n")) {
-            if (chunk.length() > 0 && chunk.length() + paragraph.length() > MAX_CHUNK_LENGTH) {
+            if (!chunk.isEmpty() && chunk.length() + paragraph.length() > MAX_CHUNK_LENGTH) {
                 passages.add(new Passage(docId + "#" + passages.size(), title, heading + "\n" + chunk.toString().strip()));
                 chunk.setLength(0);
             }
             chunk.append(paragraph.strip()).append("\n\n");
         }
-        if (chunk.length() > 0) {
+        if (!chunk.isEmpty()) {
             passages.add(new Passage(docId + "#" + passages.size(), title, heading + "\n" + chunk.toString().strip()));
         }
     }

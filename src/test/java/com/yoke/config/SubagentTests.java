@@ -28,11 +28,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class SubagentTests {
 
-    /** 对外服务的 Agent 任何一层都不该看到的工具：联网、文件读写、命令执行。 */
+    /**
+     * 对外服务的 Agent 任何一层都不该看到的工具：联网、文件读写、命令执行，
+     * 以及能读到别的用户记忆和会话的读类工具（路径由模型给的参数决定，@SafeId 管不到）。
+     * 只保留 memory_save，它只往当前用户固定的记忆文件里追加。
+     */
     private static final Set<String> NEVER = Set.of(
             "web_fetch", "web_search",
             "read_file", "write_file", "edit_file", "list_files", "glob_files", "grep_files",
-            "execute");
+            "execute",
+            "memory_get", "memory_search", "session_history", "session_list", "session_search");
 
     private static final String PARENT_PROMPT = "你是测试助手";
 

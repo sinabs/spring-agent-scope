@@ -1,4 +1,4 @@
-package com.yoke.config;
+package com.yoke.tool;
 
 import io.agentscope.core.tool.Toolkit;
 
@@ -14,15 +14,6 @@ import io.agentscope.core.tool.Toolkit;
  * <p>单独包一层类型，是为了不和官方 starter 注册的原型 {@code Toolkit} Bean 在按类型注入时撞车。
  * MCP 连接由 {@code McpConnections} 持有，模板和副本都不拥有连接。
  */
-public final class SharedToolkit {
+public record SharedToolkit(Toolkit toolkit) {
 
-    private final Toolkit toolkit;
-
-    public SharedToolkit(Toolkit toolkit) {
-        this.toolkit = toolkit;
-    }
-
-    public Toolkit toolkit() {
-        return toolkit;
-    }
 }

@@ -49,7 +49,9 @@ class ProfilesTests extends RedisIntegrationTest {
 
     @Test
     void 向量化密钥在三个环境里的写法一致_都不会让缺失变成启动失败() throws IOException {
-        assertThat(yamlValue("application-local.yml", "yoke.knowledge.embedding.api-key")).isEqualTo("${YOKE_EMBEDDING_API_KEY:}");
+        // local 接火山方舟，向量化和对话模型共用 ARK_API_KEY
+        assertThat(yamlValue("application-local.yml", "yoke.knowledge.embedding.api-key")).isEqualTo("${ARK_API_KEY:}");
+        assertThat(yamlValue("application-local.yml", "yoke.knowledge.embedding.protocol")).isEqualTo("ark-multimodal");
         assertThat(yamlValue("application-prod.yml", "yoke.knowledge.embedding.api-key")).isEqualTo("${YOKE_EMBEDDING_API_KEY:}");
         // test 环境故意留空，保证测试不访问向量化服务
         assertThat(yamlValue("application-test.yml", "yoke.knowledge.embedding.api-key")).isIn("", null);

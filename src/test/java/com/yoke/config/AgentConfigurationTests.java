@@ -2,6 +2,7 @@ package com.yoke.config;
 
 import java.util.List;
 
+import com.yoke.tool.SharedToolkit;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
@@ -42,7 +43,7 @@ class AgentConfigurationTests {
         YokeProperties yokeProperties() {
             return new YokeProperties(new YokeProperties.Redis("redis://127.0.0.1:6379", "yoke:"),
                     new YokeProperties.Compaction(30, 10), "/tmp/yoke-test",
-                    new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null)),
+                    new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null, null)),
                     new YokeProperties.Mcp(List.of()));
         }
 

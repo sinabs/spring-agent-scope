@@ -2,6 +2,7 @@ package com.yoke.config;
 
 import com.yoke.knowledge.RetrievePort;
 import com.yoke.mcp.McpConnections;
+import com.yoke.tool.SharedToolkit;
 import com.yoke.tool.ChatTools;
 import com.yoke.tool.RetrieveTool;
 import com.yoke.tool.WeatherTool;

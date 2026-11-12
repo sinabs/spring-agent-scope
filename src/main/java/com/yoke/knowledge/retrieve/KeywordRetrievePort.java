@@ -1,4 +1,4 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.retrieve;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -11,6 +11,8 @@ import java.util.Objects;
 import java.util.Set;
 
 import cn.hutool.core.util.StrUtil;
+import com.yoke.model.Passage;
+import com.yoke.knowledge.RetrievePort;
 import reactor.core.publisher.Mono;
 
 /**

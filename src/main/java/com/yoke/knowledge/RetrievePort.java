@@ -2,6 +2,7 @@ package com.yoke.knowledge;
 
 import java.util.List;
 
+import com.yoke.model.Passage;
 import reactor.core.publisher.Mono;
 
 /**

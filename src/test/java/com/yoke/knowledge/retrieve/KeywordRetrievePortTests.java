@@ -1,7 +1,8 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.retrieve;
 
 import java.util.List;
 
+import com.yoke.model.Passage;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

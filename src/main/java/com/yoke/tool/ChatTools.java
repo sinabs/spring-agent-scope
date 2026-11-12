@@ -12,10 +12,10 @@ import java.util.Objects;
 import java.util.Optional;
 
 import cn.hutool.core.util.StrUtil;
+import com.yoke.model.UserContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Yoke 自带的几个通用工具。
@@ -27,9 +27,8 @@ import org.slf4j.LoggerFactory;
  * <p>description 写的是「什么时候该用它」而不是功能罗列：模型靠它决定要不要调用。
  * 参数名用 {@code @ToolParam(name = ...)} 显式声明，不依赖编译参数。
  */
+@Slf4j
 public class ChatTools {
-
-    private static final Logger log = LoggerFactory.getLogger(ChatTools.class);
 
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss xxx");
 

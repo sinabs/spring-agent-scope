@@ -1,4 +1,4 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.embed;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import com.yoke.knowledge.EmbeddingClient;
+import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -26,17 +28,12 @@ import org.springframework.web.client.RestClient;
  * <p>隐私：用户的检索问题和知识库语料会发送给配置的 embedding 服务提供方。
  * RestClient 是阻塞的，所以放到 boundedElastic 上执行，不占用响应式线程。
  */
+@RequiredArgsConstructor
 public final class OpenAiEmbeddingClient implements EmbeddingClient {
 
     private final RestClient client;
     private final String modelName;
     private final Integer dimensions;
-
-    public OpenAiEmbeddingClient(RestClient client, String modelName, Integer dimensions) {
-        this.client = client;
-        this.modelName = modelName;
-        this.dimensions = dimensions;
-    }
 
     @Override
     public Mono<List<double[]>> embed(List<String> texts) {

@@ -3,7 +3,7 @@ package com.yoke.tool;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.yoke.knowledge.Passage;
+import com.yoke.model.Passage;
 import com.yoke.knowledge.RetrievePort;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;

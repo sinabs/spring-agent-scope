@@ -38,7 +38,8 @@ yoke:
   knowledge:
     # 知识库检索（retrieve 工具）：语料是 classpath:knowledge/*.md。
     # embedding 的 model-name 和 api-key 都有值才启用向量检索（与关键词检索融合）；任意一个为空就只用关键词检索，
-    # 向量化服务出错时也会自动退回关键词。密钥见各环境文件，base-url 可换成其他 OpenAI 兼容服务
+    # 向量化服务出错时也会自动退回关键词。密钥见各环境文件，base-url 可换成其他 OpenAI 兼容服务。
+    # protocol 默认 openai（OpenAI 兼容的 /embeddings）；火山方舟的多模态向量模型要写 ark-multimodal
     embedding:
       model-name: ${YOKE_EMBEDDING_MODEL:}
       base-url: ${YOKE_EMBEDDING_BASE_URL:https://api.openai.com/v1}

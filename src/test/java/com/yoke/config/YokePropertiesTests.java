@@ -107,6 +107,7 @@ class YokePropertiesTests {
         assertThat(properties.mcp().servers()).isEmpty();
         assertThat(properties.knowledge().embedding().enabled()).isFalse();
         assertThat(properties.knowledge().embedding().baseUrl()).isEqualTo("https://api.openai.com/v1");
+        assertThat(properties.knowledge().embedding().protocol()).isEqualTo(YokeProperties.Knowledge.Embedding.Protocol.OPENAI);
     }
 
     @Test
@@ -183,11 +184,13 @@ class YokePropertiesTests {
     @Test
     void 向量化配置的toString不泄漏密钥() {
         YokeProperties.Knowledge.Embedding embedding = new YokeProperties.Knowledge.Embedding(
-                "text-embedding-3-small", "https://api.openai.com/v1", "sk-very-secret", 512);
+                "text-embedding-3-small", "https://api.openai.com/v1", "sk-very-secret", 512,
+                YokeProperties.Knowledge.Embedding.Protocol.OPENAI);
 
         assertThat(embedding.toString()).contains("text-embedding-3-small").doesNotContain("sk-very-secret");
         assertThat(embedding.enabled()).isTrue();
-        assertThat(new YokeProperties.Knowledge.Embedding("m", "u", " ", null).enabled()).isFalse();
-        assertThat(new YokeProperties.Knowledge.Embedding(null, "u", "k", null).enabled()).isFalse();
+        assertThat(embedding.toString()).contains("protocol=OPENAI");
+        assertThat(new YokeProperties.Knowledge.Embedding("m", "u", " ", null, null).enabled()).isFalse();
+        assertThat(new YokeProperties.Knowledge.Embedding(null, "u", "k", null, null).enabled()).isFalse();
     }
 }

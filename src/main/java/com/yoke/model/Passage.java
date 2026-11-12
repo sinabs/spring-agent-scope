@@ -1,4 +1,4 @@
-package com.yoke.knowledge;
+package com.yoke.model;
 
 /**
  * 知识库里的一个片段，也是检索的返回单位。

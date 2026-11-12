@@ -1,4 +1,4 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.retrieve;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.Objects;
 
 import cn.hutool.core.util.StrUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.yoke.knowledge.EmbeddingClient;
+import com.yoke.model.Passage;
+import com.yoke.knowledge.RetrievePort;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -17,9 +19,8 @@ import reactor.core.publisher.Mono;
  * <p>片段向量在第一次检索时才算（懒索引），启动不依赖向量化服务；索引失败时这次检索报错，
  * 下一次检索会重试，不会把失败结果缓存下来。索引成功后只读，线程安全。
  */
+@Slf4j
 public final class VectorRetrievePort implements RetrievePort {
-
-    private static final Logger log = LoggerFactory.getLogger(VectorRetrievePort.class);
 
     /** 一次向量化请求最多带多少个片段。 */
     static final int BATCH_SIZE = 16;

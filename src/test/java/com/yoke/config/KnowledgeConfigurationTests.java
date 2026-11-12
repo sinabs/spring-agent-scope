@@ -3,11 +3,12 @@ package com.yoke.config;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sun.net.httpserver.HttpServer;
-import com.yoke.knowledge.HybridRetrievePort;
-import com.yoke.knowledge.KeywordRetrievePort;
-import com.yoke.knowledge.Passage;
+import com.yoke.knowledge.retrieve.HybridRetrievePort;
+import com.yoke.knowledge.retrieve.KeywordRetrievePort;
+import com.yoke.model.Passage;
 import com.yoke.knowledge.RetrievePort;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +52,38 @@ class KnowledgeConfigurationTests {
         runner.withPropertyValues("yoke.knowledge.embedding.model-name=text-embedding-3-small",
                         "yoke.knowledge.embedding.api-key=sk-test")
                 .run(context -> assertThat(context.getBean(RetrievePort.class)).isInstanceOf(HybridRetrievePort.class));
+    }
+
+    @Test
+    void 方舟协议的向量化走多模态接口且向量路真的生效() throws IOException {
+        // 只在 /embeddings/multimodal 上应答；含「Redis」的片段与问题向量相同，必须被向量路排到前面
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer ark = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        ark.createContext("/api/v3/embeddings/multimodal", exchange -> {
+            String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            calls.incrementAndGet();
+            String vector = request.contains("Redis") || request.contains("历史") ? "[1.0,0.0]" : "[0.0,1.0]";
+            byte[] body = ("{\"data\":{\"embedding\":" + vector + "}}").getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        ark.start();
+        try {
+            runner.withPropertyValues("yoke.knowledge.embedding.protocol=ark-multimodal",
+                            "yoke.knowledge.embedding.model-name=doubao-embedding-vision-251215",
+                            "yoke.knowledge.embedding.api-key=ark-test",
+                            "yoke.knowledge.embedding.dimensions=2",
+                            "yoke.knowledge.embedding.base-url=http://127.0.0.1:" + ark.getAddress().getPort() + "/api/v3")
+                    .run(context -> {
+                        RetrievePort port = context.getBean(RetrievePort.class);
+                        assertThat(port).isInstanceOf(HybridRetrievePort.class);
+                        assertThat(port.retrieve("对话历史存在哪里", 3).block()).isNotEmpty();
+                        assertThat(calls.get()).as("向量路确实请求了方舟的多模态接口").isPositive();
+                    });
+        } finally {
+            ark.stop(0);
+        }
     }
 
     @Test

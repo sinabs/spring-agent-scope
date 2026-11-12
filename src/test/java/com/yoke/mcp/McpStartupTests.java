@@ -2,7 +2,7 @@ package com.yoke.mcp;
 
 import com.yoke.config.KnowledgeConfiguration;
 import com.yoke.config.ToolConfiguration;
-import com.yoke.config.SharedToolkit;
+import com.yoke.tool.SharedToolkit;
 import com.yoke.config.YokeProperties;
 import com.yoke.support.McpTestServer;
 import com.yoke.tool.WeatherTool;

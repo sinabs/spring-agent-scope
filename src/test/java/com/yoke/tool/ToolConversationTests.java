@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.yoke.controller.ChatController;
+import com.yoke.knowledge.retrieve.KeywordRetrievePort;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
 import com.yoke.support.AguiTestSupport;
@@ -102,7 +103,7 @@ class ToolConversationTests {
 
     @Test
     void 带编号的检索结果经过完整一轮对话回到模型手里(@TempDir Path workspace) {
-        var port = new com.yoke.knowledge.KeywordRetrievePort(
+        var port = new KeywordRetrievePort(
                 com.yoke.knowledge.KnowledgeCorpus.loadFromClasspath("classpath*:knowledge/*.md"));
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new RetrieveTool(port));

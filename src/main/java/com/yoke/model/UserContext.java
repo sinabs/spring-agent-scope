@@ -1,4 +1,4 @@
-package com.yoke.tool;
+package com.yoke.model;
 
 /**
  * 当前请求的用户上下文，由控制器放进 {@code RuntimeContext}，工具方法里把它声明成<b>不带 @ToolParam 的参数</b>，

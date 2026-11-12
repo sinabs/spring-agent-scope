@@ -5,13 +5,14 @@ import java.time.Duration;
 import java.util.List;
 
 import com.yoke.knowledge.EmbeddingClient;
-import com.yoke.knowledge.HybridRetrievePort;
-import com.yoke.knowledge.KeywordRetrievePort;
+import com.yoke.knowledge.retrieve.HybridRetrievePort;
+import com.yoke.knowledge.retrieve.KeywordRetrievePort;
 import com.yoke.knowledge.KnowledgeCorpus;
-import com.yoke.knowledge.OpenAiEmbeddingClient;
-import com.yoke.knowledge.Passage;
+import com.yoke.knowledge.embed.ArkEmbeddingClient;
+import com.yoke.knowledge.embed.OpenAiEmbeddingClient;
+import com.yoke.model.Passage;
 import com.yoke.knowledge.RetrievePort;
-import com.yoke.knowledge.VectorRetrievePort;
+import com.yoke.knowledge.retrieve.VectorRetrievePort;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.context.annotation.Bean;
@@ -55,8 +56,11 @@ public class KnowledgeConfiguration {
                 .defaultHeader("Authorization", "Bearer " + embedding.apiKey())
                 .requestFactory(requestFactory)
                 .build();
-        EmbeddingClient embeddings = new OpenAiEmbeddingClient(client, embedding.modelName(), embedding.dimensions());
-        log.info("检索使用向量加关键词双路融合，向量模型：{}", embedding.modelName());
+        EmbeddingClient embeddings = switch (embedding.protocol()) {
+            case ARK_MULTIMODAL -> new ArkEmbeddingClient(client, embedding.modelName(), embedding.dimensions());
+            case OPENAI -> new OpenAiEmbeddingClient(client, embedding.modelName(), embedding.dimensions());
+        };
+        log.info("检索使用向量加关键词双路融合，向量模型：{}，协议：{}", embedding.modelName(), embedding.protocol());
         return new HybridRetrievePort(List.of(new VectorRetrievePort(passages, embeddings), keyword));
     }
 }

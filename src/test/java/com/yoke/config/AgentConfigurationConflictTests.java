@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.yoke.tool.SharedToolkit;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.DistributedStore;
@@ -27,7 +28,7 @@ class AgentConfigurationConflictTests {
                 .withBean(SharedToolkit.class, () -> new SharedToolkit(new Toolkit()))
                 .withBean(YokeProperties.class, () -> new YokeProperties(new YokeProperties.Redis("redis://127.0.0.1:6379", "yoke:"),
                         new YokeProperties.Compaction(30, 10), workspace.toString(),
-                        new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null)),
+                        new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null, null)),
                         new YokeProperties.Mcp(List.of())))
                 .withUserConfiguration(AgentConfiguration.class);
     }

@@ -11,7 +11,7 @@ import com.yoke.codec.MessageCodec;
 import com.yoke.config.HarnessAgentFactory;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
-import com.yoke.tool.UserContext;
+import com.yoke.model.UserContext;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
 import lombok.RequiredArgsConstructor;
