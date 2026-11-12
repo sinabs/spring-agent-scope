@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import com.yoke.knowledge.EmbeddingClient;
 import lombok.RequiredArgsConstructor;
@@ -63,7 +64,7 @@ public final class ArkEmbeddingClient implements EmbeddingClient {
                 .body(body)
                 .retrieve()
                 .body(Map.class);
-        Object data = Objects.isNull(response) ? null : response.get("data");
+        Object data = Optional.ofNullable(response).map(json -> json.get("data")).orElse(null);
         // 实测 data 是单个对象；兼容它改成数组的情况
         Object item = data instanceof List<?> list && !list.isEmpty() ? list.getFirst() : data;
         if (!(item instanceof Map<?, ?> map) || !(map.get("embedding") instanceof List<?> values) || values.isEmpty()) {
