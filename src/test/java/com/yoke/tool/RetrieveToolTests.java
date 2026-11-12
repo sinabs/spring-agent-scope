@@ -3,6 +3,8 @@ package com.yoke.tool;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 import com.yoke.knowledge.KnowledgeCorpus;
 import com.yoke.model.Passage;
@@ -75,9 +77,14 @@ class RetrieveToolTests {
         // 不再出现每次都从 1 开始的序号
         assertThat(first).doesNotContain("[1]").doesNotContain("[2]");
         assertThat(second).doesNotContain("[1]").doesNotContain("[2]");
-        // 同一个编号在两次结果里对应同一段正文，不同片段的编号互不相同
+        // 同一个编号在两次结果里对应同一段正文
         assertThat(first).contains("[api.md#2] 来源：接口使用\n接口使用 / 普通对话");
         assertThat(second).contains("[api.md#2] 来源：接口使用\n接口使用 / 普通对话");
+        // 不同片段的编号互不相同：两次结果一共四条资料，只有共享的那条编号重复
+        List<String> labels = Pattern.compile("(?m)^\\[([^]]+)] 来源：").matcher(first + "\n\n" + second)
+                .results().map(match -> match.group(1)).toList();
+        assertThat(labels).containsExactly("mcp.md#1", "api.md#2", "redis.md#0", "api.md#2");
+        assertThat(Set.copyOf(labels)).hasSize(3);
     }
 
     @Test
