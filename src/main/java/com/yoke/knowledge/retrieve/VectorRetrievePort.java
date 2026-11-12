@@ -12,12 +12,14 @@ import com.yoke.knowledge.RetrievePort;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * 向量检索：片段向量放在内存里，查询时用余弦相似度取前 K 个。
  *
- * <p>片段向量在第一次检索时才算（懒索引），启动不依赖向量化服务；索引失败时这次检索报错，
- * 下一次检索会重试，不会把失败结果缓存下来。索引成功后只读，线程安全。
+ * <p>片段向量不在构造时算，启动不依赖向量化服务：应用就绪后由 {@link #warmUp} 在后台预建，
+ * 第一个用户不用等方舟逐条向量化；预建还没完成时来的检索会等同一个在建的索引，不会再建一份。
+ * 索引失败时这次检索报错，下一次检索会重试，不会把失败结果缓存下来。索引成功后只读，线程安全。
  */
 @Slf4j
 public final class VectorRetrievePort implements RetrievePort {
@@ -67,6 +69,17 @@ public final class VectorRetrievePort implements RetrievePort {
                     .map(Scored::passage)
                     .toList();
         }));
+    }
+
+    /** 在 boundedElastic 上建索引，不占调用线程；失败已由 {@link #index} 记日志并清掉，这里吞掉错误信号。 */
+    @Override
+    public void warmUp() {
+        if (passages.isEmpty()) {
+            return;
+        }
+        index().subscribeOn(Schedulers.boundedElastic())
+                .subscribe(vectors -> log.info("知识库向量索引已建好：{} 个片段", vectors.size()), _ -> {
+                });
     }
 
     /** 同一时刻只会有一个在建的索引；失败后清掉，让下一次检索重试。 */

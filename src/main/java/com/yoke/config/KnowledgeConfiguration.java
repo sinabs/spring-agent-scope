@@ -15,6 +15,8 @@ import com.yoke.knowledge.RetrievePort;
 import com.yoke.knowledge.retrieve.VectorRetrievePort;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -62,5 +64,15 @@ public class KnowledgeConfiguration {
         };
         log.info("检索使用向量加关键词双路融合，向量模型：{}，协议：{}", embedding.modelName(), embedding.protocol());
         return new HybridRetrievePort(List.of(new VectorRetrievePort(passages, embeddings), keyword));
+    }
+
+    /**
+     * 应用就绪后在后台预建向量索引：方舟的多模态接口一条文本一次请求，放在第一个用户的检索里建会让那次工具调用等很久。
+     * 挂在 {@link ApplicationReadyEvent} 上而不是在 Bean 里直接触发：上下文还没起完、或者只是切片测试时不向外发请求。
+     * 预建失败只记日志，启动照常，第一次检索时再建。
+     */
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> knowledgeIndexWarmUp(RetrievePort retrievePort) {
+        return _ -> retrievePort.warmUp();
     }
 }

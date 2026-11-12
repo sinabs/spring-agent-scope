@@ -45,6 +45,11 @@ public final class HybridRetrievePort implements RetrievePort {
     }
 
     @Override
+    public void warmUp() {
+        channels.forEach(RetrievePort::warmUp);
+    }
+
+    @Override
     public Mono<List<Passage>> retrieve(String query, int topK) {
         int candidates = Math.max(topK * CANDIDATE_FACTOR, 10);
         return Flux.fromIterable(channels)

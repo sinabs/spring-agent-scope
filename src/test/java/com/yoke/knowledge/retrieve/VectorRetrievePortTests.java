@@ -71,6 +71,36 @@ class VectorRetrievePortTests {
     }
 
     @Test
+    void 预建索引在后台完成_之后的检索只需要向量化查询() throws InterruptedException {
+        KeywordEmbedding embedding = new KeywordEmbedding();
+        VectorRetrievePort port = new VectorRetrievePort(PASSAGES, embedding);
+
+        port.warmUp();
+        // 预建在 boundedElastic 上跑，warmUp 本身立即返回；等它把片段向量算完
+        for (int i = 0; i < 100 && embedding.calls.get() == 0; i++) {
+            Thread.sleep(20);
+        }
+        assertThat(embedding.calls).as("还没有任何检索，片段已经向量化").hasValue(1);
+
+        port.retrieve("Redis", 1).block();
+        assertThat(embedding.calls).as("检索时只多一次查询向量化").hasValue(2);
+    }
+
+    @Test
+    void 预建失败不抛出_第一次检索时重新建索引() {
+        KeywordEmbedding embedding = new KeywordEmbedding();
+        embedding.failNext = true;
+        VectorRetrievePort port = new VectorRetrievePort(PASSAGES, embedding);
+
+        port.warmUp();
+        // 预建还在途时来的检索会等同一个索引，预建失败它也跟着失败（上层 Hybrid 会降级到关键词），这里不关心它的结果
+        port.retrieve("Redis", 1).onErrorResume(_ -> Mono.empty()).block();
+
+        assertThat(port.retrieve("Redis", 1).block()).as("失败没有被缓存，之后的检索重新建索引")
+                .extracting(Passage::id).containsExactly("a");
+    }
+
+    @Test
     void 片段多时分批向量化() {
         List<Passage> many = new ArrayList<>();
         for (int i = 0; i < VectorRetrievePort.BATCH_SIZE + 4; i++) {

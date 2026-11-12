@@ -18,4 +18,8 @@ import reactor.core.publisher.Mono;
 public interface RetrievePort {
 
     Mono<List<Passage>> retrieve(String query, int topK);
+
+    /** 在后台做好首次检索前的准备（比如建向量索引），立即返回，失败不抛出；没有准备工作的实现什么都不做。 */
+    default void warmUp() {
+    }
 }

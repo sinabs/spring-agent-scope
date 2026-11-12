@@ -3,6 +3,7 @@ package com.yoke.config;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sun.net.httpserver.HttpServer;
@@ -12,8 +13,11 @@ import com.yoke.model.Passage;
 import com.yoke.knowledge.RetrievePort;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
@@ -80,6 +84,42 @@ class KnowledgeConfigurationTests {
                         assertThat(port).isInstanceOf(HybridRetrievePort.class);
                         assertThat(port.retrieve("对话历史存在哪里", 3).block()).isNotEmpty();
                         assertThat(calls.get()).as("向量路确实请求了方舟的多模态接口").isPositive();
+                    });
+        } finally {
+            ark.stop(0);
+        }
+    }
+
+    @Test
+    void 应用就绪后在后台预建向量索引_不等第一次检索() throws IOException, InterruptedException {
+        // 切片测试不会自己发 ApplicationReadyEvent，这里手动发，证明预建是挂在就绪事件上的、而且确实请求了向量化服务
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer ark = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        ark.createContext("/api/v3/embeddings/multimodal", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            calls.incrementAndGet();
+            byte[] body = "{\"data\":{\"embedding\":[1.0,0.0]}}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        ark.start();
+        try {
+            runner.withPropertyValues("yoke.knowledge.embedding.protocol=ark-multimodal",
+                            "yoke.knowledge.embedding.model-name=doubao-embedding-vision-251215",
+                            "yoke.knowledge.embedding.api-key=ark-test",
+                            "yoke.knowledge.embedding.dimensions=2",
+                            "yoke.knowledge.embedding.base-url=http://127.0.0.1:" + ark.getAddress().getPort() + "/api/v3")
+                    .run(context -> {
+                        assertThat(calls.get()).as("上下文刷新本身不发请求").isZero();
+
+                        context.publishEvent(new ApplicationReadyEvent(new SpringApplication(), new String[0],
+                                context.getSourceApplicationContext(ConfigurableApplicationContext.class), Duration.ZERO));
+                        for (int i = 0; i < 250 && calls.get() == 0; i++) {
+                            Thread.sleep(20);
+                        }
+
+                        assertThat(calls.get()).as("没有任何检索，向量化服务已经收到请求").isPositive();
                     });
         } finally {
             ark.stop(0);
