@@ -22,6 +22,28 @@ class KnowledgeCorpusTests {
     }
 
     @Test
+    void 片段id跟着正文走_前面插入新小节不改变后面片段的id() {
+        // id 会作为引用编号留在 Redis 的对话历史里，按位置编号的话，插一节之后旧引用就指到了别的正文上
+        String before = "# 标题\n## 第一节\n内容一\n## 第二节\n内容二\n";
+        String inserted = "# 标题\n## 新加的一节\n新内容\n## 第一节\n内容一\n## 第二节\n内容二\n";
+
+        List<Passage> original = KnowledgeCorpus.split("demo.md", before);
+        List<Passage> afterInsert = KnowledgeCorpus.split("demo.md", inserted);
+
+        assertThat(original).extracting(Passage::id).allMatch(id -> id.matches("demo\\.md#[0-9a-f]{8}"));
+        assertThat(afterInsert.subList(1, 3)).extracting(Passage::id)
+                .containsExactlyElementsOf(original.stream().map(Passage::id).toList());
+    }
+
+    @Test
+    void 正文改了片段id也跟着变() {
+        String id = KnowledgeCorpus.split("demo.md", "# 标题\n## 一节\n旧内容").getFirst().id();
+        String changed = KnowledgeCorpus.split("demo.md", "# 标题\n## 一节\n新内容").getFirst().id();
+
+        assertThat(changed).isNotEqualTo(id);
+    }
+
+    @Test
     void 过长的小节按段落再切() {
         String paragraph = "字".repeat(KnowledgeCorpus.MAX_CHUNK_LENGTH - 50);
         List<Passage> passages = KnowledgeCorpus.split("long.md", "# 长文\n## 一节\n" + paragraph + "\n\n" + paragraph + "\n");

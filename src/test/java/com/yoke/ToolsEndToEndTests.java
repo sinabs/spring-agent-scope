@@ -90,7 +90,7 @@ class ToolsEndToEndTests extends RedisIntegrationTest {
         assertThat(AguiTestSupport.toolArguments(events)).contains("对话历史存在哪里").contains("\"top_k\":2");
         assertThat(result.get("toolCallId")).isEqualTo(call.get("toolCallId"));
         assertThat(events.indexOf(call)).as("工具调用先于工具结果").isLessThan(events.indexOf(result));
-        assertThat(String.valueOf(result.get("content"))).containsPattern("\\[[\\w-]+\\.md#\\d+\\] 来源：").contains("Redis").doesNotContain("尚未配置");
+        assertThat(String.valueOf(result.get("content"))).containsPattern("\\[[\\w-]+\\.md#[0-9a-f]{8}\\] 来源：").contains("Redis").doesNotContain("尚未配置");
         assertThat(events.getLast().get("type")).isEqualTo("RUN_FINISHED");
     }
 

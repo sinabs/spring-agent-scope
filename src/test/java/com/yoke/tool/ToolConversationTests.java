@@ -113,7 +113,7 @@ class ToolConversationTests {
         List<Map<String, Object>> events = stream(controller, "s-r", "历史存哪");
 
         String output = resultOf(events);
-        assertThat(output).containsPattern("\\[[\\w-]+\\.md#\\d+\\] 来源：").contains("Redis").doesNotContain("[1]").doesNotContain("[2]");
+        assertThat(output).containsPattern("\\[[\\w-]+\\.md#[0-9a-f]{8}\\] 来源：").contains("Redis").doesNotContain("[1]").doesNotContain("[2]");
     }
 
     @Test
