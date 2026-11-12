@@ -1,12 +1,17 @@
 package com.yoke.knowledge;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import com.yoke.knowledge.retrieve.KeywordRetrievePort;
 import com.yoke.model.Passage;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class KnowledgeCorpusTests {
 
@@ -68,6 +73,29 @@ class KnowledgeCorpusTests {
         assertThat(passages).extracting(Passage::source)
                 .contains("Yoke 概览", "会话与存储", "工具与权限", "接口使用");
         assertThat(passages).extracting(Passage::id).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void 不同classpath根里有同名文档时直接失败() {
+        // classpath*: 会把依赖 jar 里的同名文件也找出来，两篇文档的片段 id 都以 api-usage.md 开头
+        List<Resource> resources = List.of(
+                named("api-usage.md", "# 接口使用\n## 一节\n内容一"),
+                named("api-usage.md", "# 别的接口\n## 一节\n内容二"),
+                named("yoke-overview.md", "# 概览\n## 一节\n内容三"));
+
+        assertThatThrownBy(() -> KnowledgeCorpus.load(resources))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("api-usage.md")
+                .hasMessageNotContaining("yoke-overview.md");
+    }
+
+    private static Resource named(String fileName, String markdown) {
+        return new ByteArrayResource(markdown.getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public String getFilename() {
+                return fileName;
+            }
+        };
     }
 
     @Test

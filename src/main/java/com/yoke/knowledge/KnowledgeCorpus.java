@@ -10,7 +10,10 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import com.yoke.model.Passage;
 import lombok.NoArgsConstructor;
@@ -34,22 +37,39 @@ public final class KnowledgeCorpus {
     /** 读取 classpath 下的全部知识文档并切片；没有文档时返回空列表。 */
     public static List<Passage> loadFromClasspath(String pattern) {
         try {
-            Resource[] resources = new PathMatchingResourcePatternResolver().getResources(pattern);
-            List<Passage> passages = new ArrayList<>();
-            Arrays.stream(resources)
-                    .sorted(Comparator.comparing(Resource::getFilename, Comparator.nullsLast(Comparator.naturalOrder())))
-                    .forEach(resource -> {
-                        try {
-                            String markdown = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-                            passages.addAll(split(resource.getFilename(), markdown));
-                        } catch (IOException e) {
-                            throw new UncheckedIOException("读取知识文档失败：" + resource.getFilename(), e);
-                        }
-                    });
-            return passages;
+            return load(Arrays.asList(new PathMatchingResourcePatternResolver().getResources(pattern)));
         } catch (IOException e) {
             throw new UncheckedIOException("扫描知识文档失败：" + pattern, e);
         }
+    }
+
+    /**
+     * 片段 id 以文件名开头，{@code classpath*:} 又会把每个 classpath 根（依赖 jar、测试资源）里的同名文件都找出来，
+     * 两篇同名文档的片段会被当成同一个来源，融合检索时还会互相覆盖，所以文件名重复直接失败，而不是悄悄丢掉一篇。
+     */
+    static List<Passage> load(List<Resource> resources) {
+        List<String> duplicates = resources.stream()
+                .collect(Collectors.groupingBy(resource -> Optional.ofNullable(resource.getFilename()).orElse(""),
+                        TreeMap::new, Collectors.counting()))
+                .entrySet().stream()
+                .filter(entry -> entry.getValue() > 1)
+                .map(Map.Entry::getKey)
+                .toList();
+        if (!duplicates.isEmpty()) {
+            throw new IllegalStateException("知识文档文件名重复，片段 id 会冲突：" + duplicates);
+        }
+        List<Passage> passages = new ArrayList<>();
+        resources.stream()
+                .sorted(Comparator.comparing(Resource::getFilename, Comparator.nullsLast(Comparator.naturalOrder())))
+                .forEach(resource -> {
+                    try {
+                        String markdown = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                        passages.addAll(split(resource.getFilename(), markdown));
+                    } catch (IOException e) {
+                        throw new UncheckedIOException("读取知识文档失败：" + resource.getFilename(), e);
+                    }
+                });
+        return passages;
     }
 
     /** 把一篇 Markdown 切成片段；{@code fileName} 只在文档没有一级标题时充当标题。 */
