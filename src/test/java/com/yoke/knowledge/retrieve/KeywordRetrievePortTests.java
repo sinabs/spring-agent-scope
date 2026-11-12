@@ -33,6 +33,16 @@ class KeywordRetrievePortTests {
     }
 
     @Test
+    void 同样命中一次时短片段排在长片段前面() {
+        // BM25 按片段长度归一化：长片段放在前面，长度没有按片段对上时排序就会保持原样
+        Passage longer = new Passage("long#0", "长文", "Redis " + "无关的内容 ".repeat(40));
+        Passage shorter = new Passage("short#0", "短文", "Redis 保存历史");
+        KeywordRetrievePort mixed = new KeywordRetrievePort(List.of(longer, shorter, VIRTUAL));
+
+        assertThat(mixed.retrieve("redis", 3).block()).containsExactly(shorter, longer);
+    }
+
+    @Test
     void 结果数量不超过topK() {
         assertThat(port.retrieve("的 工具 对话 虚拟 线程 Redis 括号", 2).block()).hasSizeLessThanOrEqualTo(2);
     }

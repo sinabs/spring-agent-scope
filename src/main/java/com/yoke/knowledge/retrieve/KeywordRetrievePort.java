@@ -30,19 +30,24 @@ public final class KeywordRetrievePort implements RetrievePort {
 
     private final List<Passage> passages;
     private final List<Map<String, Integer>> termFrequencies;
+    /** 每个片段的词数，与 termFrequencies 一一对应；构造时就定了，不在每次查询时重新累加。 */
+    private final int[] lengths;
     private final Map<String, Integer> documentFrequency = new HashMap<>();
     private final double averageLength;
 
     public KeywordRetrievePort(List<Passage> passages) {
         this.passages = List.copyOf(passages);
         this.termFrequencies = new ArrayList<>();
+        this.lengths = new int[this.passages.size()];
         long totalLength = 0;
-        for (Passage passage : this.passages) {
+        for (int i = 0; i < this.passages.size(); i++) {
+            Passage passage = this.passages.get(i);
             Map<String, Integer> frequencies = new HashMap<>();
             List<String> tokens = tokenize(passage.source() + " " + passage.text());
             tokens.forEach(token -> frequencies.merge(token, 1, Integer::sum));
             frequencies.keySet().forEach(token -> documentFrequency.merge(token, 1, Integer::sum));
             termFrequencies.add(frequencies);
+            lengths[i] = tokens.size();
             totalLength += tokens.size();
         }
         this.averageLength = this.passages.isEmpty() ? 1 : Math.max(1, (double) totalLength / this.passages.size());
@@ -62,7 +67,7 @@ public final class KeywordRetrievePort implements RetrievePort {
         }
         List<Scored> scored = new ArrayList<>();
         for (int i = 0; i < passages.size(); i++) {
-            double score = score(queryTerms, termFrequencies.get(i));
+            double score = score(queryTerms, termFrequencies.get(i), lengths[i]);
             if (score > 0) {
                 scored.add(new Scored(passages.get(i), score));
             }
@@ -74,8 +79,7 @@ public final class KeywordRetrievePort implements RetrievePort {
                 .toList();
     }
 
-    private double score(Set<String> queryTerms, Map<String, Integer> frequencies) {
-        double length = frequencies.values().stream().mapToInt(Integer::intValue).sum();
+    private double score(Set<String> queryTerms, Map<String, Integer> frequencies, int length) {
         double score = 0;
         for (String term : queryTerms) {
             Integer tf = frequencies.get(term);
