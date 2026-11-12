@@ -49,6 +49,19 @@ class KnowledgeCorpusTests {
     }
 
     @Test
+    void 代码块里井号开头的行不当作标题_原样留在正文里() {
+        String markdown = "# 构建\n## 命令\n先切 JDK：\n\n```bash\n# 先切 JDK\nsdk env\n## 再构建\n./gradlew build\n```\n\n## 下一节\n内容\n";
+
+        List<Passage> passages = KnowledgeCorpus.split("build.md", markdown);
+
+        assertThat(passages).extracting(Passage::source).containsOnly("构建");
+        assertThat(passages).hasSize(2);
+        assertThat(passages.getFirst().text()).startsWith("构建 / 命令\n")
+                .contains("# 先切 JDK").contains("## 再构建").contains("./gradlew build");
+        assertThat(passages.get(1).text()).startsWith("构建 / 下一节\n");
+    }
+
+    @Test
     void 过长的小节按段落再切() {
         String paragraph = "字".repeat(KnowledgeCorpus.MAX_CHUNK_LENGTH - 50);
         List<Passage> passages = KnowledgeCorpus.split("long.md", "# 长文\n## 一节\n" + paragraph + "\n\n" + paragraph + "\n");

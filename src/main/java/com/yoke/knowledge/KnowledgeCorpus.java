@@ -24,6 +24,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
  * 把 {@code classpath*:knowledge/*.md} 切成片段。
  *
  * <p>切法：文档第一个一级标题（{@code # }）当作文档标题，之后每个二级标题（{@code ## }）起一个片段，
+ * 代码围栏（{@code ```}、{@code ~~~}）里以 {@code #} 开头的行不算标题，
  * 片段正文超过 {@link #MAX_CHUNK_LENGTH} 个字符时按段落再切。每个片段正文前面带上「文档标题 / 小节标题」，
  * 这样单看一个片段也知道它在讲什么。片段 id 由文档名和正文摘要组成，见 {@link #passage}。
  */
@@ -79,9 +80,16 @@ public final class KnowledgeCorpus {
         StringBuilder body = new StringBuilder();
         List<Passage> passages = new ArrayList<>();
         String docId = Optional.ofNullable(fileName).orElse("doc");
+        boolean inFence = false;
 
         for (String line : markdown.split("\\R")) {
-            if (line.startsWith("# ")) {
+            // 代码块里的「# 先切 JDK」是 shell 注释，不是标题：围栏内的行原样进正文
+            if (isFence(line)) {
+                inFence = !inFence;
+                body.append(line).append('\n');
+            } else if (inFence) {
+                body.append(line).append('\n');
+            } else if (line.startsWith("# ")) {
                 title = line.substring(2).trim();
             } else if (line.startsWith("## ")) {
                 flush(passages, docId, title, section, body);
@@ -92,6 +100,12 @@ public final class KnowledgeCorpus {
         }
         flush(passages, docId, title, section, body);
         return passages;
+    }
+
+    /** Markdown 的代码围栏：行首最多三个空格后跟 ``` 或 ~~~。 */
+    private static boolean isFence(String line) {
+        String trimmed = line.stripLeading();
+        return line.length() - trimmed.length() <= 3 && (trimmed.startsWith("```") || trimmed.startsWith("~~~"));
     }
 
     private static void flush(List<Passage> passages, String docId, String title, String section, StringBuilder body) {
