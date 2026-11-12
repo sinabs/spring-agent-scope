@@ -10,7 +10,7 @@ Yoke 自带的工具有 get_current_time、calculate、list_my_notes、get_weath
 list_my_notes 需要知道当前用户是谁，但 userId 不是模型传的参数：它由控制器放进 RuntimeContext，工具方法里不带 @ToolParam 的 UserContext 参数由框架按类型注入。模型既看不到这个参数，也没法伪造。
 
 ## 检索如何降级
-retrieve 工具背后是检索端口。配置了 embedding 模型时，向量检索和关键词检索并行，用 RRF 融合排名；没有配置或向量检索失败时，自动退回纯关键词检索。返回的每条资料前带方括号编号（形如 [api-usage.md#2]，是片段的稳定标识，多次检索也不会重复），回答时应原样照抄编号标注引用。
+retrieve 工具背后是检索端口。配置了 embedding 模型时，向量检索和关键词检索并行，用 RRF 融合排名；没有配置或向量检索失败时，自动退回纯关键词检索。返回的每条资料前带方括号编号（形如 [文档名.md#片段编号]，是片段的稳定标识，多次检索也不会重复），回答时应原样照抄编号标注引用。
 
 ## 接入 MCP 服务
 通过 yoke.mcp.servers 可以接入外部 MCP 服务，传输方式只允许 sse 和 streamable-http 两种 HTTP 传输。配置 stdio 会在启动时直接失败，因为 stdio 会让服务端按配置去启动本地进程。

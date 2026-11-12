@@ -1,12 +1,16 @@
 package com.yoke.tool;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.yoke.knowledge.KnowledgeCorpus;
 import com.yoke.model.Passage;
 import com.yoke.knowledge.RetrievePort;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
+
+import org.springframework.core.io.ClassPathResource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -22,6 +26,23 @@ class RetrieveToolTests {
                 .getAnnotation(io.agentscope.core.tool.Tool.class).description();
 
         assertThat(description).contains("明确要求查知识库").contains("必须调用").contains("不能没查就说知识库里没有");
+    }
+
+    @Test
+    void 给模型看的编号示例不是真实存在的片段编号() throws Exception {
+        // 模型被要求原样照抄方括号里的编号，示例要是真实编号，模型可能把没检索到的片段也引出来
+        String description = RetrieveTool.class.getMethod("retrieve", String.class, Integer.class)
+                .getAnnotation(io.agentscope.core.tool.Tool.class).description();
+        String researcher = new ClassPathResource("workspace/subagents/kb-researcher.md")
+                .getContentAsString(StandardCharsets.UTF_8);
+        List<Passage> corpus = KnowledgeCorpus.loadFromClasspath("classpath*:knowledge/*.md");
+        List<String> modelFacing = new ArrayList<>(List.of(description, researcher));
+        corpus.forEach(passage -> modelFacing.add(passage.text()));
+
+        assertThat(description).contains("[文档名.md#片段编号]");
+        for (Passage passage : corpus) {
+            assertThat(modelFacing).noneMatch(text -> text.contains("[" + passage.id() + "]"));
+        }
     }
 
     @Test
