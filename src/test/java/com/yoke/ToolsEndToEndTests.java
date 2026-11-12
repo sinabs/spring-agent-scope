@@ -81,7 +81,7 @@ class ToolsEndToEndTests extends RedisIntegrationTest {
     }
 
     @Test
-    void 检索工具在真实装配下连着知识库_返回带编号的资料() {
+    void 检索工具在真实装配下连着知识库_返回带稳定编号的资料() {
         List<Map<String, Object>> events = stream("e2e-r-" + System.nanoTime(), "对话历史存在哪里");
 
         Map<String, Object> call = AguiTestSupport.first(events, "TOOL_CALL_START");
@@ -90,7 +90,7 @@ class ToolsEndToEndTests extends RedisIntegrationTest {
         assertThat(AguiTestSupport.toolArguments(events)).contains("对话历史存在哪里").contains("\"top_k\":2");
         assertThat(result.get("toolCallId")).isEqualTo(call.get("toolCallId"));
         assertThat(events.indexOf(call)).as("工具调用先于工具结果").isLessThan(events.indexOf(result));
-        assertThat(String.valueOf(result.get("content"))).contains("[1] 来源：").contains("Redis").doesNotContain("尚未配置");
+        assertThat(String.valueOf(result.get("content"))).containsPattern("\\[[\\w-]+\\.md#\\d+\\] 来源：").contains("Redis").doesNotContain("尚未配置");
         assertThat(events.getLast().get("type")).isEqualTo("RUN_FINISHED");
     }
 

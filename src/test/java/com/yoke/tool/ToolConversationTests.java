@@ -102,7 +102,7 @@ class ToolConversationTests {
     }
 
     @Test
-    void 带编号的检索结果经过完整一轮对话回到模型手里(@TempDir Path workspace) {
+    void 带稳定编号的检索结果经过完整一轮对话回到模型手里(@TempDir Path workspace) {
         var port = new KeywordRetrievePort(
                 com.yoke.knowledge.KnowledgeCorpus.loadFromClasspath("classpath*:knowledge/*.md"));
         Toolkit toolkit = new Toolkit();
@@ -113,7 +113,7 @@ class ToolConversationTests {
         List<Map<String, Object>> events = stream(controller, "s-r", "历史存哪");
 
         String output = resultOf(events);
-        assertThat(output).contains("[1] 来源：").contains("[2] 来源：").contains("Redis").doesNotContain("[3]");
+        assertThat(output).containsPattern("\\[[\\w-]+\\.md#\\d+\\] 来源：").contains("Redis").doesNotContain("[1]").doesNotContain("[2]");
     }
 
     @Test

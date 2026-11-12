@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RetrieveToolTests {
 
     private static final List<Passage> HITS = List.of(
-            new Passage("a", "会话与存储", "会话与存储 / 对话历史\n历史放在 Redis"),
-            new Passage("b", "工具与权限", "工具与权限 / 模型能用哪些工具\n有 calculate"));
+            new Passage("sessions.md#0", "会话与存储", "会话与存储 / 对话历史\n历史放在 Redis"),
+            new Passage("tools.md#3", "工具与权限", "工具与权限 / 模型能用哪些工具\n有 calculate"));
 
     @Test
     void 工具说明要求用户明确让查知识库时必须调用_不能没查就说没有() throws NoSuchMethodException {
@@ -31,9 +31,32 @@ class RetrieveToolTests {
         String result = tool.retrieve("历史", 3).block();
 
         assertThat(result).contains("检索到 2 条相关资料")
-                .contains("[1] 来源：会话与存储").contains("历史放在 Redis")
-                .contains("[2] 来源：工具与权限").contains("有 calculate");
-        assertThat(result.indexOf("[1]")).isLessThan(result.indexOf("[2]"));
+                .contains("[sessions.md#0] 来源：会话与存储").contains("历史放在 Redis")
+                .contains("[tools.md#3] 来源：工具与权限").contains("有 calculate");
+        assertThat(result.indexOf("[sessions.md#0]")).isLessThan(result.indexOf("[tools.md#3]"));
+    }
+
+    @Test
+    void 多次检索的编号不冲突_同一个片段始终是同一个编号() {
+        // 模型常常换个说法再查一次。每次从 [1] 开始编号的话，两次结果里的 [1] 指向不同的片段，引用就对不上
+        Passage shared = new Passage("api.md#2", "接口使用", "接口使用 / 普通对话\n发送 JSON");
+        Passage onlyFirst = new Passage("mcp.md#1", "工具与权限", "工具与权限 / 接入 MCP\n只允许 HTTP");
+        Passage onlySecond = new Passage("redis.md#0", "会话与存储", "会话与存储 / Redis\n历史放在 Redis");
+        List<List<Passage>> answers = List.of(List.of(onlyFirst, shared), List.of(onlySecond, shared));
+        java.util.concurrent.atomic.AtomicInteger call = new java.util.concurrent.atomic.AtomicInteger();
+        RetrieveTool tool = new RetrieveTool((query, topK) -> Mono.just(answers.get(call.getAndIncrement())));
+
+        String first = tool.retrieve("q1", 3).block();
+        String second = tool.retrieve("q2", 3).block();
+
+        assertThat(first).contains("[mcp.md#1] 来源：").contains("[api.md#2] 来源：");
+        assertThat(second).contains("[redis.md#0] 来源：").contains("[api.md#2] 来源：");
+        // 不再出现每次都从 1 开始的序号
+        assertThat(first).doesNotContain("[1]").doesNotContain("[2]");
+        assertThat(second).doesNotContain("[1]").doesNotContain("[2]");
+        // 同一个编号在两次结果里对应同一段正文，不同片段的编号互不相同
+        assertThat(first).contains("[api.md#2] 来源：接口使用\n接口使用 / 普通对话");
+        assertThat(second).contains("[api.md#2] 来源：接口使用\n接口使用 / 普通对话");
     }
 
     @Test
