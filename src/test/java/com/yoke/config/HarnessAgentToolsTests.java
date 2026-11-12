@@ -5,8 +5,10 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.yoke.mcp.McpConnections;
 import com.yoke.support.RedisIntegrationTest;
 import com.yoke.support.StubModelConfiguration;
+import com.yoke.tool.SharedToolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +34,9 @@ class HarnessAgentToolsTests extends RedisIntegrationTest {
 
     @Autowired
     HarnessAgentFactory agentFactory;
+
+    @Autowired
+    SharedToolkit sharedToolkit;
 
     /** 不显式传 toolsConfig 时，这份 tools.json 会把 get_weather 拒掉。 */
     private static Path workspaceWithToolsJson() {
@@ -65,6 +70,17 @@ class HarnessAgentToolsTests extends RedisIntegrationTest {
     void 工作区里的toolsJson不生效() {
         try (HarnessAgent agent = agentFactory.create()) {
             assertThat(agent.getToolkit().getToolNames()).contains("get_weather");
+        }
+    }
+
+    @Test
+    void Harness在build时加的内置工具都登记在MCP重名检查的清单里() {
+        // MCP 重名检查在启动时只看得到模板，模板之外的工具靠 HARNESS_TOOL_NAMES 兜住；框架新增了内置工具，这里会变红
+        try (HarnessAgent agent = agentFactory.create()) {
+            assertThat(agent.getToolkit().getToolNames())
+                    .filteredOn(name -> !sharedToolkit.toolkit().getToolNames().contains(name))
+                    .isNotEmpty()
+                    .allMatch(McpConnections.HARNESS_TOOL_NAMES::contains);
         }
     }
 }
