@@ -247,7 +247,7 @@ public record YokeProperties(
             public static final int MIN_TOKEN_LENGTH = 16;
 
             public Server {
-                if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+                if (Objects.isNull(timeout) || timeout.isZero() || timeout.isNegative()) {
                     timeout = Duration.ofSeconds(120);
                 }
                 if (maxBodyBytes <= 0) {
@@ -280,7 +280,7 @@ public record YokeProperties(
                 @DefaultValue List<@Valid Skill> skills) {
 
             public Card {
-                skills = skills == null ? List.of() : List.copyOf(skills);
+                skills = Optional.ofNullable(skills).map(List::copyOf).orElse(List.of());
             }
         }
 
@@ -296,7 +296,7 @@ public record YokeProperties(
                 @NotBlank String id, @NotBlank String name, String description, @DefaultValue List<String> tags) {
 
             public Skill {
-                tags = tags == null ? List.of() : List.copyOf(tags);
+                tags = Optional.ofNullable(tags).map(List::copyOf).orElse(List.of());
             }
         }
 
@@ -315,7 +315,7 @@ public record YokeProperties(
         public record Remote(String url, String agentName, String token, @DefaultValue("30s") Duration timeout) {
 
             public Remote {
-                if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+                if (Objects.isNull(timeout) || timeout.isZero() || timeout.isNegative()) {
                     timeout = Duration.ofSeconds(30);
                 }
             }
@@ -391,7 +391,7 @@ public record YokeProperties(
                 @DefaultValue("2s") Duration timeout) {
 
             public PromptSwitch {
-                if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+                if (Objects.isNull(timeout) || timeout.isZero() || timeout.isNegative()) {
                     timeout = Duration.ofSeconds(2);
                 }
             }

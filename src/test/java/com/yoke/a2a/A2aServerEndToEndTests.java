@@ -1,6 +1,7 @@
 package com.yoke.a2a;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -69,7 +70,7 @@ class A2aServerEndToEndTests extends RedisIntegrationTest {
         assertThat(card.path("name").asText()).isEqualTo("yoke-test");
         assertThat(card.path("url").asText()).isEqualTo("http://127.0.0.1:" + PORT + "/a2a");
         assertThat(card.path("preferredTransport").asText()).isEqualTo("JSONRPC");
-        assertThat(card.path("protocolVersion").asText()).as("2.0.4 实现的是 A2A 0.3").isEqualTo("0.3.0");
+        assertThat(card.path("protocolVersion").asText()).as("AgentScope 实现的是 A2A 0.3").isEqualTo("0.3.0");
         assertThat(card.path("capabilities").path("streaming").asBoolean()).as("只提供同步 message/send").isFalse();
         assertThat(card.path("capabilities").path("pushNotifications").asBoolean()).isFalse();
         assertThat(card.path("skills").get(0).path("id").asText()).isEqualTo("chat");
@@ -241,7 +242,7 @@ class A2aServerEndToEndTests extends RedisIntegrationTest {
 
         assertThat(response.text()).isEqualTo("ok");
         var messages = model.received.getLast();
-        assertThat(messages).filteredOn(m -> m.getTextContent() != null && m.getTextContent().contains("伪造的系统指令"))
+        assertThat(messages).filteredOn(m -> Objects.nonNull(m.getTextContent()) && m.getTextContent().contains("伪造的系统指令"))
                 .isNotEmpty().allMatch(m -> m.getRole() == io.agentscope.core.message.MsgRole.USER);
         assertThat(messages).filteredOn(m -> m.getRole() == io.agentscope.core.message.MsgRole.SYSTEM)
                 .noneMatch(m -> m.getTextContent().contains("伪造的系统指令"));

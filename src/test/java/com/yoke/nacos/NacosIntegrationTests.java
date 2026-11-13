@@ -1,5 +1,6 @@
 package com.yoke.nacos;
 
+import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -24,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 真实 Nacos（docker-compose.yml 里固定版本的 3.x 容器）+ AgentScope 2.0.4 自带的客户端。
+ * 真实 Nacos（docker-compose.yml 里固定版本的 3.x 容器）+ AgentScope 自带的 Nacos 客户端。
  * 每个测试自己启动并关闭一个完整的应用上下文，这样能观察「就绪后注册、关闭时注销」。模型是假的。
  */
 class NacosIntegrationTests extends NacosIntegrationTest {
@@ -89,7 +90,7 @@ class NacosIntegrationTests extends NacosIntegrationTest {
                 "yoke.nacos.password=S3cret-Pass-xyz", "server.port=0"))
                 .satisfies(e -> {
                     StringBuilder all = new StringBuilder();
-                    for (Throwable t = e; t != null; t = t.getCause()) {
+                    for (Throwable t = e; Objects.nonNull(t); t = t.getCause()) {
                         all.append(t.getMessage()).append('\n');
                     }
                     assertThat(all.toString()).contains("无法使用 Nacos 的 AI 通道").doesNotContain("S3cret-Pass-xyz");
@@ -237,7 +238,7 @@ class NacosIntegrationTests extends NacosIntegrationTest {
             assertThat(response.status()).as(response.body()).isEqualTo(200);
             assertThat(response.json().path("reply").asText()).isEqualTo("ok");
             assertThat(context.getBean(RecordingModel.class).received.stream().flatMap(java.util.List::stream)
-                    .anyMatch(m -> m.getTextContent() != null && m.getTextContent().contains("经 Nacos 发现"))).isTrue();
+                    .anyMatch(m -> Objects.nonNull(m.getTextContent()) && m.getTextContent().contains("经 Nacos 发现"))).isTrue();
         }
     }
 
@@ -253,9 +254,9 @@ class NacosIntegrationTests extends NacosIntegrationTest {
     private static String systemText(RecordingModel model, String userText) {
         var call = model.received.stream()
                 .filter(messages -> messages.stream().anyMatch(m -> m.getRole() == MsgRole.USER
-                        && m.getTextContent() != null && m.getTextContent().contains(userText)))
+                        && Objects.nonNull(m.getTextContent()) && m.getTextContent().contains(userText)))
                 .filter(messages -> messages.stream().anyMatch(m -> m.getRole() == MsgRole.SYSTEM
-                        && m.getTextContent() != null && m.getTextContent().contains("你是一个乐于助人的 AI 助手")))
+                        && Objects.nonNull(m.getTextContent()) && m.getTextContent().contains("你是一个乐于助人的 AI 助手")))
                 .reduce((first, second) -> second).orElseThrow();
         return call.stream().filter(m -> m.getRole() == MsgRole.SYSTEM)
                 .map(m -> m.getTextContent()).reduce("", (a, b) -> a + "\n" + b);

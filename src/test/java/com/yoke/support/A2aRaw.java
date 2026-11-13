@@ -9,6 +9,8 @@ import java.net.http.HttpResponse;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -66,10 +68,10 @@ public final class A2aRaw {
         message.put("role", "user");
         message.put("messageId", UUID.randomUUID().toString());
         message.put("parts", List.of(Map.of("kind", "text", "text", text)));
-        if (contextId != null) {
+        if (Objects.nonNull(contextId)) {
             message.put("contextId", contextId);
         }
-        if (metadata != null) {
+        if (Objects.nonNull(metadata)) {
             message.put("metadata", metadata);
         }
         return rpc("message/send", Map.of("message", message));
@@ -86,7 +88,7 @@ public final class A2aRaw {
     public Response post(String body, String authorization) {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + "/a2a"))
                 .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body));
-        if (authorization != null) {
+        if (Objects.nonNull(authorization)) {
             request.header("Authorization", authorization);
         }
         return execute(request.build());
@@ -94,7 +96,7 @@ public final class A2aRaw {
 
     /** 带正确 token 发送。 */
     public Response send(String body) {
-        return post(body, token == null ? null : "Bearer " + token);
+        return post(body, Optional.ofNullable(token).map(value -> "Bearer " + value).orElse(null));
     }
 
     /** 向任意路径 POST 一个 JSON（不带认证），用来测试 Yoke 自己的 HTTP 接口。 */
@@ -116,7 +118,7 @@ public final class A2aRaw {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + "/a2a"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofInputStream(() -> stream));
-        if (authorization != null) {
+        if (Objects.nonNull(authorization)) {
             request.header("Authorization", authorization);
         }
         return execute(request.build());

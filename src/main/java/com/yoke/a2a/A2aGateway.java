@@ -7,6 +7,8 @@ import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 import cn.hutool.core.util.StrUtil;
@@ -80,7 +82,7 @@ public class A2aGateway {
         this.server = server;
         this.runner = runner;
         this.publishedCard = publishedCard;
-        this.tokenDigest = StrUtil.isNotBlank(token) ? sha256(token) : null;
+        this.tokenDigest = Optional.ofNullable(token).filter(StrUtil::isNotBlank).map(A2aGateway::sha256).orElse(null);
         this.maxBodyBytes = maxBodyBytes;
     }
 
@@ -141,7 +143,7 @@ public class A2aGateway {
         }
         // 大小只在字节层检查一次（preflight 的声明长度 + readBody 的限长读取）；这里不再对已解码的字符串重算字节数，
         // 含非法 UTF-8 的输入解码后会被替换字符撑长，重算会误伤
-        if (body == null) {
+        if (Objects.isNull(body)) {
             return unreadable();
         }
         JsonNode root;
@@ -150,7 +152,7 @@ public class A2aGateway {
         } catch (JsonProcessingException | RuntimeException e) {
             return rpcError(null, new JSONParseError("请求体不是合法的 JSON"));
         }
-        if (root == null || !root.isObject()) {
+        if (Objects.isNull(root) || !root.isObject()) {
             return rpcError(null, new InvalidRequestError());
         }
         Object id = idOf(root);
@@ -177,7 +179,7 @@ public class A2aGateway {
         Object result = server.getTransportWrapper(TransportProtocol.JSONRPC.asString(), JsonRpcTransportWrapper.class)
                 .handleRequest(body, forwardedHeaders, Map.of());
         if (!(result instanceof JSONRPCResponse<?> response)) {
-            log.error("A2A 处理链返回了意料之外的类型：{}", result == null ? null : result.getClass().getName());
+            log.error("A2A 处理链返回了意料之外的类型：{}", Optional.ofNullable(result).map(value -> value.getClass().getName()).orElse(null));
             return rpcError(id, new InternalError("服务端内部错误"));
         }
         if (response instanceof SendMessageResponse sent && sent.getResult() instanceof Message message) {
@@ -200,16 +202,16 @@ public class A2aGateway {
             throw new IllegalArgumentException("不支持接续任务（taskId），延续对话请使用 contextId");
         }
         JsonNode metadataNode = message.get("metadata");
-        if (metadataNode != null && !metadataNode.isNull() && !metadataNode.isObject()) {
+        if (Objects.nonNull(metadataNode) && !metadataNode.isNull() && !metadataNode.isObject()) {
             throw new IllegalArgumentException("message.metadata 必须是对象");
         }
-        ObjectNode metadata = metadataNode != null && metadataNode.isObject()
+        ObjectNode metadata = Objects.nonNull(metadataNode) && metadataNode.isObject()
                 ? (ObjectNode) metadataNode : message.putObject("metadata");
 
         String userId = textOrNull(metadata, "userId");
         String sessionId = textOrNull(metadata, "sessionId");
         String contextId = textOrNull(message, "contextId");
-        if (!StrUtil.isNotBlank(sessionId)) {
+        if (StrUtil.isBlank(sessionId)) {
             sessionId = contextId;
         }
         if (StrUtil.isNotBlank(userId) && !SafeId.Validator.isSafe(userId)) {
@@ -218,7 +220,7 @@ public class A2aGateway {
         if (StrUtil.isNotBlank(sessionId) && !SafeId.Validator.isSafe(sessionId)) {
             throw new IllegalArgumentException("sessionId（或 contextId）格式不合法：只能包含字母、数字、下划线、点和短横线，长度 1 到 64，且不能全是点");
         }
-        if (!StrUtil.isNotBlank(sessionId)) {
+        if (StrUtil.isBlank(sessionId)) {
             sessionId = UUID.randomUUID().toString();
         }
         metadata.put("sessionId", sessionId);
@@ -236,12 +238,12 @@ public class A2aGateway {
     }
 
     private static boolean hasValue(JsonNode node) {
-        return node != null && !node.isNull() && StrUtil.isNotBlank(node.asText());
+        return Objects.nonNull(node) && !node.isNull() && StrUtil.isNotBlank(node.asText());
     }
 
     private static String textOrNull(JsonNode parent, String field) {
         JsonNode node = parent.get(field);
-        if (node == null || node.isNull()) {
+        if (Objects.isNull(node) || node.isNull()) {
             return null;
         }
         if (!node.isTextual()) {
@@ -252,20 +254,20 @@ public class A2aGateway {
 
     private static Object idOf(JsonNode root) {
         JsonNode id = root.get("id");
-        if (id == null || id.isNull()) {
+        if (Objects.isNull(id) || id.isNull()) {
             return null;
         }
         return id.isNumber() ? id.numberValue() : id.asText();
     }
 
     private boolean authorized(Map<String, String> headers) {
-        if (tokenDigest == null) {
+        if (Objects.isNull(tokenDigest)) {
             return true;
         }
         String header = headers.entrySet().stream()
                 .filter(entry -> "authorization".equalsIgnoreCase(entry.getKey()))
                 .map(Map.Entry::getValue).findFirst().orElse(null);
-        if (header == null || !header.regionMatches(true, 0, "Bearer ", 0, 7)) {
+        if (Objects.isNull(header) || !header.regionMatches(true, 0, "Bearer ", 0, 7)) {
             return false;
         }
         // 先各自取摘要再比较：长度固定，常量时间，也不泄露 token 的长度

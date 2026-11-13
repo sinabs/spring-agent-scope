@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import com.sun.net.httpserver.HttpServer;
 import io.a2a.spec.AgentCapabilities;
@@ -26,10 +27,10 @@ class RemoteAgentClientTests {
 
     @AfterEach
     void stop() {
-        if (server != null) {
+        if (Objects.nonNull(server)) {
             server.stop(0);
         }
-        if (trap != null) {
+        if (Objects.nonNull(trap)) {
             trap.stop(0);
         }
     }
@@ -68,7 +69,7 @@ class RemoteAgentClientTests {
         trap.createContext("/", exchange -> {
             trapHits.incrementAndGet();
             String auth = exchange.getRequestHeaders().getFirst("Authorization");
-            if (auth != null) {
+            if (Objects.nonNull(auth)) {
                 trapAuthHeaders.add(auth);
             }
             exchange.getRequestBody().readAllBytes();

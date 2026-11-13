@@ -1,5 +1,7 @@
 package com.yoke.config;
 
+import java.util.Objects;
+
 import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.yoke.nacos.NacosA2aRegistrar;
@@ -63,7 +65,7 @@ public class NacosConfiguration {
         @EventListener(ApplicationReadyEvent.class)
         public void onReady() {
             AgentScopeA2aServer a2aServer = server.getIfAvailable();
-            if (a2aServer == null) {
+            if (Objects.isNull(a2aServer)) {
                 log.info("A2A 服务端未开启（yoke.a2a.server.enabled=false），Nacos 只用于发现远端，不注册本服务");
                 return;
             }

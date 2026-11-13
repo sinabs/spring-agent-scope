@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
  * <p>传输安全：{@code public-url} 缺省是 {@code http://localhost:端口}，Bearer Token 走的是明文 HTTP。生产必须配置 https 的对外地址，
  * 或者由网关终结 TLS，否则 token 会在网络上明文传输。
  *
- * <p>协议：官方 2.0.4 实现的是 A2A 0.3 版本（SDK 0.3.3.Final，Agent Card 的 protocolVersion 为 0.3.0）。以 2.0.4 为准，
+ * <p>协议：AgentScope 目前实现的是 A2A 0.3 版本（Agent Card 的 protocolVersion 为 0.3.0）。
  * 更新版本的 AgentScope 已改为 A2A 1.0、不再支持 0.3，升级前请以对应版本的手册为准。
  * 传输只有 JSON-RPC。<b>只支持同步非流式的 {@code message/send}</b>：Agent Card 里 {@code capabilities.streaming=false}；
  * {@code message/stream}、{@code tasks/resubscribe} 返回「不支持的操作」，{@code tasks/get}、{@code tasks/cancel}、

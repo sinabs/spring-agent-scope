@@ -1,6 +1,7 @@
 package com.yoke.nacos;
 
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -91,7 +92,7 @@ public final class NacosSupport {
     }
 
     private static void shutdownQuietly(AiService service) {
-        if (service != null) {
+        if (Objects.nonNull(service)) {
             try {
                 service.shutdown();
             } catch (NacosException | RuntimeException ignored) {

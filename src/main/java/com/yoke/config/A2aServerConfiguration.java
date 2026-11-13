@@ -3,6 +3,7 @@ package com.yoke.config;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -117,7 +118,7 @@ public class A2aServerConfiguration {
     static AgentCard publishedCard(AgentCard card) {
         AgentCapabilities original = card.capabilities();
         AgentCapabilities honest = new AgentCapabilities(false, false, false,
-                original == null ? List.of() : original.extensions());
+                Optional.ofNullable(original).map(AgentCapabilities::extensions).orElse(List.of()));
         return new AgentCard.Builder(card).capabilities(honest).build();
     }
 

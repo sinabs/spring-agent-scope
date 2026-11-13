@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 
 import com.yoke.a2a.A2aGateway;
@@ -34,14 +36,14 @@ public class A2aController implements A2aApi {
     public ResponseEntity<String> message(HttpServletRequest request) {
         Map<String, String> headers = headersOf(request);
         A2aGateway.Reply reply = gateway.preflight(headers, request.getContentLengthLong());
-        if (reply == null) {
+        if (Objects.isNull(reply)) {
             String body;
             try {
                 body = gateway.readBody(request.getInputStream());
             } catch (IOException e) {
                 return respond(gateway.unreadable());
             }
-            reply = body == null ? gateway.tooLarge() : gateway.handle(body, headers);
+            reply = Optional.ofNullable(body).map(text -> gateway.handle(text, headers)).orElseGet(gateway::tooLarge);
         }
         return respond(reply);
     }
@@ -49,7 +51,7 @@ public class A2aController implements A2aApi {
     private static ResponseEntity<String> respond(A2aGateway.Reply reply) {
         ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.valueOf(reply.status()))
                 .contentType(MediaType.APPLICATION_JSON);
-        if (reply.wwwAuthenticate() != null) {
+        if (Objects.nonNull(reply.wwwAuthenticate())) {
             response.header(HttpHeaders.WWW_AUTHENTICATE, reply.wwwAuthenticate());
         }
         return response.body(reply.body());

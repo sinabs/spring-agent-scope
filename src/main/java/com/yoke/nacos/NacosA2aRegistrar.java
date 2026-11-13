@@ -1,6 +1,7 @@
 package com.yoke.nacos;
 
 import java.net.URI;
+import java.util.Objects;
 
 import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.ai.model.a2a.AgentEndpoint;
@@ -58,7 +59,7 @@ public class NacosA2aRegistrar {
 
     /** 注销端点；Agent Card 本身留在 Nacos 里（它是配置数据，不是在线状态）。 */
     public void deregister() {
-        if (registered == null) {
+        if (Objects.isNull(registered)) {
             return;
         }
         try {

@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
@@ -121,7 +122,7 @@ public class YokeAgentRunner implements AgentRunner {
 
     /** 取走（并清除）某个任务的失败说明；没有失败返回空。 */
     public Optional<String> takeFailure(String taskId) {
-        if (taskId == null) {
+        if (Objects.isNull(taskId)) {
             return Optional.empty();
         }
         synchronized (failures) {
@@ -130,7 +131,7 @@ public class YokeAgentRunner implements AgentRunner {
     }
 
     private void recordFailure(String taskId, String reason) {
-        if (taskId != null) {
+        if (Objects.nonNull(taskId)) {
             synchronized (failures) {
                 failures.put(taskId, reason);
             }
@@ -138,7 +139,7 @@ public class YokeAgentRunner implements AgentRunner {
     }
 
     private static String resolveId(String value, String fallback, String field) {
-        if (!StrUtil.isNotBlank(value)) {
+        if (StrUtil.isBlank(value)) {
             return fallback;
         }
         if (!SafeId.Validator.isSafe(value)) {
@@ -152,19 +153,19 @@ public class YokeAgentRunner implements AgentRunner {
                 .map(Msg::getTextContent)
                 .filter(StrUtil::isNotBlank)
                 .collect(Collectors.joining("\n"));
-        if (!StrUtil.isNotBlank(text)) {
+        if (StrUtil.isBlank(text)) {
             throw new IllegalArgumentException("消息里没有文本内容");
         }
         return text;
     }
 
     private static AgentEvent textOnly(AgentResultEvent event) {
-        Msg result = event.getResult();
-        String text = result == null ? "" : MessageCodec.toText(result);
-        return new AgentResultEvent(Msg.builder().id(result == null ? null : result.getId())
-                .name(result == null ? null : result.getName())
+        Optional<Msg> result = Optional.ofNullable(event.getResult());
+        String text = result.map(MessageCodec::toText).orElse("");
+        return new AgentResultEvent(Msg.builder().id(result.map(Msg::getId).orElse(null))
+                .name(result.map(Msg::getName).orElse(null))
                 .role(MsgRole.ASSISTANT)
-                .textContent(text == null ? "" : text)
+                .textContent(text)
                 .build());
     }
 

@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Objects;
 
 import org.testcontainers.containers.ComposeContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -33,7 +34,7 @@ public final class NacosCompose {
 
     /** Nacos 的 {@code host:port}（主端口），形如 {@code 127.0.0.1:54321}。 */
     public static synchronized String serverAddr() {
-        if (serverAddr == null) {
+        if (Objects.isNull(serverAddr)) {
             start();
         }
         return serverAddr;

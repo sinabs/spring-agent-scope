@@ -5,6 +5,8 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 
 import cn.hutool.core.util.StrUtil;
@@ -77,10 +79,10 @@ public class RemoteAgentClient {
 
     private A2aAgent prepare(String sessionId) {
         AgentCard card = cardResolver.getAgentCard(agentName);
-        if (card == null) {
+        if (Objects.isNull(card)) {
             throw new IllegalStateException("没有取到远端的 Agent Card");
         }
-        if (pinnedOrigin != null && !cardStaysInOrigin(card)) {
+        if (Objects.nonNull(pinnedOrigin) && !cardStaysInOrigin(card)) {
             throw new RemoteAgentException("远端 Agent Card 声明的服务地址与配置的地址不一致，已拒绝调用", false, null);
         }
         JSONRPCTransportConfig transport = new JSONRPCTransportConfig(new NoRedirectHttpClient(timeout));
@@ -96,7 +98,7 @@ public class RemoteAgentClient {
      * Card 里<b>所有</b>声明服务地址的位置都必须与配置同源，并且首选传输必须是 JSONRPC。
      *
      * <p>只比较 {@code card.url} 会被绕过：官方 ClientBuilder 选传输时把「首选传输 -> url」和
-     * 「additionalInterfaces 里每一项」放进同一张表，再挑 JSONRPC（读 2.0.4 的 a2a-java-sdk 0.3.3.Final 字节码所得）。
+     * 「additionalInterfaces 里每一项」放进同一张表，再挑 JSONRPC（读 AgentScope 所用 a2a-java-sdk 的字节码所得）。
      * 远端把 url 写成同源、首选传输写成别的，并在 additionalInterfaces 里放一个指向别处的 JSONRPC 地址，
      * 客户端就会改用后者，消息和 token 被引到任意地址。所以这里宁严勿松：首选传输不是 JSONRPC 就拒绝，
      * additionalInterfaces 里任何一项不同源（不管什么传输）也拒绝。代价：把对外地址和内部地址拆开写的远端会被拒，
@@ -111,7 +113,7 @@ public class RemoteAgentClient {
             if (!pinnedOrigin.equals(originOf(card.url()))) {
                 return false;
             }
-            if (card.additionalInterfaces() != null) {
+            if (Objects.nonNull(card.additionalInterfaces())) {
                 for (var each : card.additionalInterfaces()) {
                     if (!pinnedOrigin.equals(originOf(each.url()))) {
                         return false;
@@ -134,7 +136,7 @@ public class RemoteAgentClient {
 
     /** 响应式超时和 HTTP 请求超时谁先到都算超时（二者设成同一个时长，会竞争）。 */
     private static boolean isTimeout(Throwable error) {
-        for (Throwable t = error; t != null; t = t.getCause()) {
+        for (Throwable t = error; Objects.nonNull(t); t = t.getCause()) {
             if (t instanceof TimeoutException || t instanceof java.net.http.HttpTimeoutException) {
                 return true;
             }
@@ -144,12 +146,12 @@ public class RemoteAgentClient {
 
     /** 协议 + 主机 + 端口（端口缺省时按协议补全），用来比较「是不是同一个服务」。 */
     public static String originOf(String url) {
-        if (!StrUtil.isNotBlank(url)) {
+        if (StrUtil.isBlank(url)) {
             return "";
         }
         URI uri = URI.create(url);
         // 主机名里有下划线之类，URI 能解析但 getHost() 是 null：两边都变成 "…://null:80" 会被误判为同源，所以直接拒绝
-        if (uri.getScheme() == null || uri.getHost() == null) {
+        if (Objects.isNull(uri.getScheme()) || Objects.isNull(uri.getHost())) {
             throw new IllegalArgumentException("无法从地址中解析出协议和主机");
         }
         int port = uri.getPort() > 0 ? uri.getPort() : "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
@@ -179,7 +181,7 @@ public class RemoteAgentClient {
             if (payload instanceof SendMessageRequest request && StrUtil.isNotBlank(sessionId)) {
                 Message original = request.getParams().message();
                 Map<String, Object> metadata = new HashMap<>();
-                if (original.getMetadata() != null) {
+                if (Objects.nonNull(original.getMetadata())) {
                     metadata.putAll(original.getMetadata());
                 }
                 metadata.put("sessionId", sessionId);
@@ -188,7 +190,7 @@ public class RemoteAgentClient {
                 forwarded = new SendMessageRequest(request.getId(),
                         new MessageSendParams(message, params.configuration(), params.metadata()));
             }
-            Map<String, String> allHeaders = new HashMap<>(headers == null ? Map.of() : headers);
+            Map<String, String> allHeaders = new HashMap<>(Optional.ofNullable(headers).orElse(Map.of()));
             if (StrUtil.isNotBlank(token)) {
                 allHeaders.put("Authorization", "Bearer " + token);
             }
