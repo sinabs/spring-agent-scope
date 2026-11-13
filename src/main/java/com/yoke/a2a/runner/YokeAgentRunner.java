@@ -106,7 +106,8 @@ public class YokeAgentRunner implements AgentRunner {
                         agent -> agent.streamEvents(MessageCodec.toInput(text), contextOf(userId, sessionId))
                                 .ofType(AgentResultEvent.class)
                                 .map(YokeAgentRunner::textOnly),
-                        HarnessAgent::close)
+                        // eager=false：结果先交给调用方再关闭 Agent，关闭失败只记日志，不把已经成功的调用改写成失败
+                        HarnessAgent::close, false)
                 .timeout(timeout)
                 .doOnError(error -> {
                     // 堆栈只进服务端日志；对外只留一句不含内部信息的说明
