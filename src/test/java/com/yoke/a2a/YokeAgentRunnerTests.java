@@ -23,6 +23,7 @@ import reactor.core.publisher.Flux;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,7 +61,7 @@ class YokeAgentRunnerTests {
 
     @Test
     void 只放行最终结果事件且只含文本(@TempDir Path workspace) {
-        ScriptedModel model = new ScriptedModel(call -> ScriptedModel.text("回复"));
+        ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("回复"));
 
         List<AgentEvent> events = runner(model, workspace, Duration.ofSeconds(30))
                 .streamEvents(input("你好"), options("t1", "u1", "s1")).collectList().block();
@@ -70,12 +71,12 @@ class YokeAgentRunnerTests {
 
     @Test
     void 模型的思考过程不会出现在对外的结果里(@TempDir Path workspace) {
-        ScriptedModel model = new ScriptedModel(call -> List.of(
+        ScriptedModel model = new ScriptedModel(_ -> List.of(
                 io.agentscope.core.message.ThinkingBlock.builder().thinking("内部思考不能外泄").build(),
                 io.agentscope.core.message.TextBlock.builder().text("最终答案").build()));
 
         List<AgentEvent> events = runner(model, workspace, Duration.ofSeconds(30))
-                .streamEvents(input("问"), options("t-think", "u", "s-think")).collectList().block();
+                .streamEvents(input("问"), options("t-think", "u", "s-think")).collectList().blockOptional().orElseThrow();
 
         Msg result = ((AgentResultEvent) events.getFirst()).getResult();
         assertThat(result.getTextContent()).isEqualTo("最终答案");
@@ -84,11 +85,11 @@ class YokeAgentRunnerTests {
 
     @Test
     void 不合法的用户或会话标识直接拒绝并记入失败台账(@TempDir Path workspace) {
-        YokeAgentRunner runner = runner(new ScriptedModel(call -> ScriptedModel.text("x")), workspace, Duration.ofSeconds(30));
+        YokeAgentRunner runner = runner(new ScriptedModel(_ -> ScriptedModel.text("x")), workspace, Duration.ofSeconds(30));
 
-        assertThatThrownBy(() -> runner.streamEvents(input("x"), options("t-bad-user", "../etc", "s1")))
+        assertThatThrownBy(() -> runner.streamEvents(input("x"), options("t-bad-user", "../etc", "s1")).blockLast())
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("userId");
-        assertThatThrownBy(() -> runner.streamEvents(input("x"), options("t-bad-session", "u1", "a/b")))
+        assertThatThrownBy(() -> runner.streamEvents(input("x"), options("t-bad-session", "u1", "a/b")).blockLast())
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("sessionId");
         assertThat(runner.takeFailure("t-bad-user")).isPresent();
         assertThat(runner.takeFailure("t-bad-user")).as("取走即清除").isEmpty();
@@ -97,9 +98,9 @@ class YokeAgentRunnerTests {
 
     @Test
     void 没有文本内容时拒绝(@TempDir Path workspace) {
-        YokeAgentRunner runner = runner(new ScriptedModel(call -> ScriptedModel.text("x")), workspace, Duration.ofSeconds(30));
+        YokeAgentRunner runner = runner(new ScriptedModel(_ -> ScriptedModel.text("x")), workspace, Duration.ofSeconds(30));
 
-        assertThatThrownBy(() -> runner.streamEvents(List.of(), options("t-empty", "u", "s")))
+        assertThatThrownBy(() -> runner.streamEvents(List.of(), options("t-empty", "u", "s")).blockLast())
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -138,7 +139,7 @@ class YokeAgentRunnerTests {
 
     @Test
     void 超时后失败并记入台账(@TempDir Path workspace) {
-        ScriptedModel slow = new ScriptedModel(call -> {
+        ScriptedModel slow = new ScriptedModel(_ -> {
             try {
                 Thread.sleep(3_000);
             } catch (InterruptedException e) {
@@ -160,14 +161,14 @@ class YokeAgentRunnerTests {
         when(factory.create()).thenReturn(agent);
         YokeAgentRunner runner = new YokeAgentRunner(factory, "yoke", "测试", Duration.ofSeconds(5));
 
-        when(agent.streamEvents(any(List.class), any(io.agentscope.core.agent.RuntimeContext.class)))
+        when(agent.streamEvents(anyList(), any(io.agentscope.core.agent.RuntimeContext.class)))
                 .thenReturn(Flux.empty());
         runner.streamEvents(input("完成"), options("t-ok", "u", "s")).collectList().block();
         verify(agent).close();
 
         io.agentscope.harness.agent.HarnessAgent failing = mock(io.agentscope.harness.agent.HarnessAgent.class);
         when(factory.create()).thenReturn(failing);
-        when(failing.streamEvents(any(List.class), any(io.agentscope.core.agent.RuntimeContext.class)))
+        when(failing.streamEvents(anyList(), any(io.agentscope.core.agent.RuntimeContext.class)))
                 .thenReturn(Flux.error(new IllegalStateException("boom")));
         assertThatThrownBy(() -> runner.streamEvents(input("出错"), options("t-err", "u", "s")).collectList().block())
                 .isInstanceOf(IllegalStateException.class);
@@ -175,7 +176,7 @@ class YokeAgentRunnerTests {
 
         io.agentscope.harness.agent.HarnessAgent hanging = mock(io.agentscope.harness.agent.HarnessAgent.class);
         when(factory.create()).thenReturn(hanging);
-        when(hanging.streamEvents(any(List.class), any(io.agentscope.core.agent.RuntimeContext.class)))
+        when(hanging.streamEvents(anyList(), any(io.agentscope.core.agent.RuntimeContext.class)))
                 .thenReturn(Flux.never());
         runner.streamEvents(input("取消"), options("t-cancel", "u", "s")).subscribe().dispose();
         verify(hanging).close();

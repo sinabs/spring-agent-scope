@@ -3,7 +3,6 @@ package com.yoke.config;
 import java.util.Objects;
 
 import com.alibaba.nacos.api.ai.AiService;
-import com.alibaba.nacos.api.exception.NacosException;
 import com.yoke.nacos.NacosA2aRegistrar;
 import com.yoke.nacos.NacosPromptMiddleware;
 import com.yoke.nacos.NacosSupport;

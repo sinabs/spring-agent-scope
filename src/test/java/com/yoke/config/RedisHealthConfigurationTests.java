@@ -1,5 +1,7 @@
 package com.yoke.config;
 
+import java.util.Objects;
+
 import org.junit.jupiter.api.Test;
 import redis.clients.jedis.RedisClient;
 import redis.clients.jedis.exceptions.JedisConnectionException;
@@ -19,7 +21,7 @@ class RedisHealthConfigurationTests {
         RedisClient jedis = mock(RedisClient.class);
         when(jedis.ping()).thenReturn("PONG");
 
-        assertThat(config.redisHealthIndicator(jedis).health().getStatus()).isEqualTo(Status.UP);
+        assertThat(Objects.requireNonNull(config.redisHealthIndicator(jedis).health()).getStatus()).isEqualTo(Status.UP);
     }
 
     @Test
@@ -27,7 +29,7 @@ class RedisHealthConfigurationTests {
         RedisClient jedis = mock(RedisClient.class);
         when(jedis.ping()).thenThrow(new JedisConnectionException("redis://:密码@host 连接失败"));
 
-        var health = config.redisHealthIndicator(jedis).health();
+        var health = Objects.requireNonNull(config.redisHealthIndicator(jedis).health());
 
         assertThat(health.getStatus()).isEqualTo(Status.DOWN);
         assertThat(health.getDetails()).isEmpty();

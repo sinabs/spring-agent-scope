@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 
 import io.a2a.client.http.A2AHttpClient;
 import io.a2a.client.http.A2AHttpResponse;
+import org.jspecify.annotations.NonNull;
 
 /**
  * 给 A2A 客户端用的 HTTP 客户端：<b>不跟随重定向</b>，并给每个请求设上超时。
@@ -37,17 +38,17 @@ public class NoRedirectHttpClient implements A2AHttpClient {
     }
 
     @Override
-    public GetBuilder createGet() {
+    public @NonNull GetBuilder createGet() {
         return new Get();
     }
 
     @Override
-    public PostBuilder createPost() {
+    public @NonNull PostBuilder createPost() {
         return new Post();
     }
 
     @Override
-    public DeleteBuilder createDelete() {
+    public @NonNull DeleteBuilder createDelete() {
         throw new UnsupportedOperationException("Yoke 的 A2A 客户端不使用 DELETE");
     }
 
@@ -58,19 +59,19 @@ public class NoRedirectHttpClient implements A2AHttpClient {
         abstract T self();
 
         @Override
-        public T url(String url) {
+        public @NonNull T url(@NonNull String url) {
             this.url = url;
             return self();
         }
 
         @Override
-        public T addHeaders(Map<String, String> more) {
+        public @NonNull T addHeaders(@NonNull Map<String, String> more) {
             headers.putAll(more);
             return self();
         }
 
         @Override
-        public T addHeader(String name, String value) {
+        public @NonNull T addHeader(@NonNull String name, @NonNull String value) {
             headers.put(name, value);
             return self();
         }
@@ -97,7 +98,7 @@ public class NoRedirectHttpClient implements A2AHttpClient {
             }
 
             @Override
-            public String body() {
+            public @NonNull String body() {
                 return response.body();
             }
         };
@@ -111,13 +112,13 @@ public class NoRedirectHttpClient implements A2AHttpClient {
         }
 
         @Override
-        public A2AHttpResponse get() throws IOException, InterruptedException {
+        public @NonNull A2AHttpResponse get() throws IOException, InterruptedException {
             return send(request(this).GET().build());
         }
 
         @Override
-        public CompletableFuture<Void> getAsyncSSE(Consumer<String> messageConsumer, Consumer<Throwable> errorConsumer,
-                Runnable completeRunnable) {
+        public @NonNull CompletableFuture<Void> getAsyncSSE(@NonNull Consumer<String> messageConsumer, @NonNull Consumer<Throwable> errorConsumer,
+                @NonNull Runnable completeRunnable) {
             throw new UnsupportedOperationException("Yoke 的 A2A 客户端不使用流式");
         }
     }
@@ -132,19 +133,19 @@ public class NoRedirectHttpClient implements A2AHttpClient {
         }
 
         @Override
-        public PostBuilder body(String body) {
+        public @NonNull PostBuilder body(@NonNull String body) {
             this.body = body;
             return this;
         }
 
         @Override
-        public A2AHttpResponse post() throws IOException, InterruptedException {
+        public @NonNull A2AHttpResponse post() throws IOException, InterruptedException {
             return send(request(this).POST(HttpRequest.BodyPublishers.ofString(body)).build());
         }
 
         @Override
-        public CompletableFuture<Void> postAsyncSSE(Consumer<String> messageConsumer, Consumer<Throwable> errorConsumer,
-                Runnable completeRunnable) {
+        public @NonNull CompletableFuture<Void> postAsyncSSE(@NonNull Consumer<String> messageConsumer, @NonNull Consumer<Throwable> errorConsumer,
+                @NonNull Runnable completeRunnable) {
             throw new UnsupportedOperationException("Yoke 的 A2A 客户端不使用流式");
         }
     }

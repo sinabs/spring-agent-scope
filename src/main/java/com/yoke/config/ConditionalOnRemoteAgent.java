@@ -7,6 +7,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import cn.hutool.core.util.StrUtil;
+import org.jspecify.annotations.NonNull;
 
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.ConditionContext;
@@ -24,7 +25,7 @@ public @interface ConditionalOnRemoteAgent {
     class RemoteConfigured implements Condition {
 
         @Override
-        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+        public boolean matches(@NonNull ConditionContext context, @NonNull AnnotatedTypeMetadata metadata) {
             Environment env = context.getEnvironment();
             return StrUtil.isNotBlank(env.getProperty("yoke.a2a.remote.url"))
                     || StrUtil.isNotBlank(env.getProperty("yoke.a2a.remote.agent-name"));

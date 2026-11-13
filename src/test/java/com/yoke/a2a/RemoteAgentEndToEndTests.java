@@ -47,13 +47,13 @@ class RemoteAgentEndToEndTests extends RedisIntegrationTest {
 
     final A2aRaw http = new A2aRaw(PORT, null);
 
-    private static String uniqueId(String prefix) {
-        return prefix + "-" + UUID.randomUUID();
+    private static String uniqueId() {
+        return "remote-" + UUID.randomUUID();
     }
 
     @Test
     void 经AgentCard发现后调用远端并拿到回复且会话延续() {
-        String session = uniqueId("remote");
+        String session = uniqueId();
 
         A2aRaw.Response first = http.postJson("/api/chat/remote",
                 "{\"sessionId\":\"" + session + "\",\"message\":\"远端第一句\"}");

@@ -24,6 +24,8 @@ import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.a2a.agent.A2aAgentConfig;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -175,8 +177,8 @@ public class RemoteAgentClient {
         }
 
         @Override
-        public PayloadAndHeaders intercept(String methodName, Object payload, Map<String, String> headers,
-                AgentCard agentCard, ClientCallContext context) {
+        public @NonNull PayloadAndHeaders intercept(@NonNull String methodName, @Nullable Object payload, @Nullable Map<String, String> headers,
+                @Nullable AgentCard agentCard, @Nullable ClientCallContext context) {
             Object forwarded = payload;
             if (payload instanceof SendMessageRequest request && StrUtil.isNotBlank(sessionId)) {
                 Message original = request.getParams().message();

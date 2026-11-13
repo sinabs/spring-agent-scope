@@ -23,7 +23,6 @@ public final class RedisCompose {
     private static final String SERVICE = "redis";
     private static final int REDIS_PORT = 6379;
 
-    private static ComposeContainer compose;
     private static String uri;
 
     private RedisCompose() {
@@ -52,10 +51,11 @@ public final class RedisCompose {
         }
     }
 
+    @SuppressWarnings("resource") // 容器要活到 JVM 退出，由下面注册的关闭钩子停止，不能在方法里用 try-with-resources 关掉
     private static void start() {
         int hostPort = freePort();
         // compose 文件里宿主机端口来自 REDIS_PORT，这里换成空闲端口，避免和本机正在跑的 Redis 冲突
-        compose = new ComposeContainer(new File("docker-compose.yml"))
+        ComposeContainer compose = new ComposeContainer(new File("docker-compose.yml"))
                 .withEnv("REDIS_PORT", String.valueOf(hostPort))
                 // compose 文件里还有 Nacos 等服务，这里只需要 Redis，别把别的也拉起来
                 .withServices(SERVICE)

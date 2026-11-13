@@ -261,7 +261,7 @@ public record YokeProperties(
 
             /** token 不进日志和调试输出。 */
             @Override
-            public String toString() {
+            public @NonNull String toString() {
                 return "Server[enabled=" + enabled + ", token=" + (tokenConfigured() ? "***" : null)
                         + ", publicUrl=" + publicUrl + ", timeout=" + timeout + ", card=" + card + "]";
             }
@@ -326,7 +326,7 @@ public record YokeProperties(
 
             /** 地址里可能带路径或参数，token 更不能进日志：只留名字、是否有 token。 */
             @Override
-            public String toString() {
+            public @NonNull String toString() {
                 return "Remote[url=" + url + ", agentName=" + agentName + ", token="
                         + (StrUtil.isNotBlank(token) ? "***" : null) + ", timeout=" + timeout + "]";
             }
@@ -365,7 +365,7 @@ public record YokeProperties(
 
         /** 密码不进日志和调试输出。 */
         @Override
-        public String toString() {
+        public @NonNull String toString() {
             return "Nacos[serverAddr=" + serverAddr + ", namespace=" + namespace + ", username=" + username
                     + ", password=" + (StrUtil.isNotBlank(password) ? "***" : null) + ", a2a=" + a2a
                     + ", prompt=" + prompt + "]";

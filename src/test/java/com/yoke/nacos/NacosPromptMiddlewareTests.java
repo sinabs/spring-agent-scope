@@ -77,12 +77,12 @@ class NacosPromptMiddlewareTests {
     @Test
     void Nacos不响应时在超时后兜底_对话仍然成功(@TempDir Path workspace) throws Exception {
         AiService hanging = mock(AiService.class);
-        when(hanging.getPrompt("k")).thenAnswer(invocation -> {
+        when(hanging.getPrompt("k")).thenAnswer(_ -> {
             Thread.sleep(10_000);
             return null;
         });
         NacosPromptMiddleware middleware = new NacosPromptMiddleware(hanging, "k", Duration.ofMillis(300));
-        ScriptedModel model = new ScriptedModel(call -> ScriptedModel.text("照常回答"));
+        ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("照常回答"));
         var subagents = YokeSubagents.programmatic();
         YokeSubagents.prepareWorkspace(workspace, subagents);
         HarnessAgentFactory factory = new HarnessAgentFactory("Yoke", "内置提示词", 6, model, TestAgents.inMemoryStore(),
@@ -91,7 +91,7 @@ class NacosPromptMiddlewareTests {
         long start = System.nanoTime();
         String reply;
         try (var agent = factory.create()) {
-            reply = agent.call("你好", RuntimeContext.builder().userId("u").sessionId("s-timeout").build()).block().getTextContent();
+            reply = agent.call("你好", RuntimeContext.builder().userId("u").sessionId("s-timeout").build()).blockOptional().orElseThrow().getTextContent();
         }
         long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
 

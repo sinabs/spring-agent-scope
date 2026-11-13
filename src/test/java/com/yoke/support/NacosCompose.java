@@ -26,7 +26,6 @@ public final class NacosCompose {
 
     private static final String SERVICE = "nacos";
 
-    private static ComposeContainer compose;
     private static String serverAddr;
 
     private NacosCompose() {
@@ -46,8 +45,8 @@ public final class NacosCompose {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://" + serverAddr() + "/nacos/v3/admin/ai/prompt"))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(form)).timeout(Duration.ofSeconds(10)).build();
-        try {
-            HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (!response.body().contains("\"code\":0")) {
                 throw new IllegalStateException("发布 Prompt 失败：" + response.body());
             }
@@ -60,8 +59,8 @@ public final class NacosCompose {
     public static String httpGet(String path) {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://" + serverAddr() + path))
                 .GET().timeout(Duration.ofSeconds(10)).build();
-        try {
-            return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString()).body();
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            return client.send(request, HttpResponse.BodyHandlers.ofString()).body();
         } catch (IOException | InterruptedException e) {
             throw new IllegalStateException("请求 Nacos 失败：" + path, e);
         }
@@ -71,10 +70,11 @@ public final class NacosCompose {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    @SuppressWarnings("resource") // 容器要活到 JVM 退出，由下面注册的关闭钩子停止，不能在方法里用 try-with-resources 关掉
     private static void start() {
         int[] ports = freePortPair();
         int console = freePort();
-        compose = new ComposeContainer(new File("docker-compose.yml"))
+        ComposeContainer compose = new ComposeContainer(new File("docker-compose.yml"))
                 .withEnv("NACOS_PORT", String.valueOf(ports[0]))
                 .withEnv("NACOS_GRPC_PORT", String.valueOf(ports[1]))
                 .withEnv("NACOS_CONSOLE_PORT", String.valueOf(console))

@@ -268,7 +268,7 @@ class RemoteAgentClientTests {
 
     @Test
     void 卡片里的地址解析不出主机时拒绝调用() throws IOException {
-        String trapBase = startTrap();
+        startTrap();
         String base = startRemoteWithCard(self -> card(self + "/a2a", "JSONRPC",
                 List.of(new io.a2a.spec.AgentInterface("JSONRPC", "http://bad_host:" + trap.getAddress().getPort() + "/a2a"))));
 

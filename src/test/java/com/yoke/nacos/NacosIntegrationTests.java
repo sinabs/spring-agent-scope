@@ -15,7 +15,9 @@ import com.yoke.support.NacosCompose;
 import com.yoke.support.NacosIntegrationTest;
 import com.yoke.support.RecordingModel;
 import com.yoke.support.StubModelConfiguration;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -28,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 真实 Nacos（docker-compose.yml 里固定版本的 3.x 容器）+ AgentScope 自带的 Nacos 客户端。
  * 每个测试自己启动并关闭一个完整的应用上下文，这样能观察「就绪后注册、关闭时注销」。模型是假的。
  */
+@Slf4j
 class NacosIntegrationTests extends NacosIntegrationTest {
 
     private static final String TEST_WORKSPACE = System.getProperty("java.io.tmpdir") + "/yoke-test-workspace";
@@ -36,9 +39,9 @@ class NacosIntegrationTests extends NacosIntegrationTest {
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
-    private static YokeProperties.Nacos nacosProps(boolean a2a, boolean prompt) {
+    private static YokeProperties.Nacos nacosProps() {
         return new YokeProperties.Nacos(NacosCompose.serverAddr(), null, null, null,
-                new YokeProperties.Nacos.A2aSwitch(a2a, false), new YokeProperties.Nacos.PromptSwitch(prompt, "k", java.time.Duration.ofSeconds(2)));
+                new YokeProperties.Nacos.A2aSwitch(true, false), new YokeProperties.Nacos.PromptSwitch(false, "k", java.time.Duration.ofSeconds(2)));
     }
 
     /** 用命令行参数的形式传属性：优先级最高，不会被 application.yml 里的空默认值盖掉（builder.properties 是最低优先级）。 */
@@ -66,7 +69,7 @@ class NacosIntegrationTests extends NacosIntegrationTest {
 
     @Test
     void 探活成功时返回可用的客户端() throws Exception {
-        AiService service = NacosSupport.connect(nacosProps(true, false), TEST_WORKSPACE);
+        AiService service = NacosSupport.connect(nacosProps(), TEST_WORKSPACE);
 
         assertThat(service).isNotNull();
         service.shutdown();
@@ -124,7 +127,7 @@ class NacosIntegrationTests extends NacosIntegrationTest {
                     sleepQuietly(200);
                 }
             }
-            System.out.println("PROMPT-HOT-UPDATE 发布后 " + (System.nanoTime() - start) / 1_000_000 + " ms 内生效");
+            log.info("PROMPT-HOT-UPDATE 发布后 {} ms 内生效", (System.nanoTime() - start) / 1_000_000);
 
             assertThat(second).contains("【热更新版本二】").doesNotContain("【热更新版本一】");
             assertThat(second.split("【热更新版本二】", -1)).hasSize(2);
@@ -137,7 +140,7 @@ class NacosIntegrationTests extends NacosIntegrationTest {
                 "yoke.nacos.prompt.key=" + uniqueId("missing"), "server.port=0")) {
             RecordingModel model = context.getBean(RecordingModel.class);
             var reply = context.getBean(com.yoke.controller.ChatController.class)
-                    .chat(new com.yoke.model.ChatRequest(uniqueId("s"), "你好")).block();
+                    .chat(new com.yoke.model.ChatRequest(uniqueId("s"), "你好")).blockOptional().orElseThrow();
 
             assertThat(reply.reply()).isEqualTo("ok");
             assertThat(systemText(model, "你好")).contains("你是一个乐于助人的 AI 助手");
@@ -174,7 +177,7 @@ class NacosIntegrationTests extends NacosIntegrationTest {
         String name = uniqueId("yoke-reg");
         AiService observer = independentClient();
         try {
-            try (ConfigurableApplicationContext context = start("yoke.a2a.server.enabled=true",
+            try (ConfigurableApplicationContext _ = start("yoke.a2a.server.enabled=true",
                     "yoke.a2a.server.card.name=" + name, "yoke.nacos.a2a.enabled=true", "server.port=" + port,
                     "yoke.a2a.server.public-url=http://127.0.0.1:" + port)) {
                 var card = observer.getAgentCard(name);
@@ -190,7 +193,7 @@ class NacosIntegrationTests extends NacosIntegrationTest {
                 sleepQuietly(300);
                 remaining = endpointCount(name);
             }
-            System.out.println("DEREGISTER 关闭后等待 " + (System.nanoTime() - start) / 1_000_000 + " ms，剩余端点 " + remaining);
+            log.info("DEREGISTER 关闭后等待 {} ms，剩余端点 {}", (System.nanoTime() - start) / 1_000_000, remaining);
             assertThat(remaining).as("关闭后端点已注销").isZero();
         } finally {
             observer.shutdown();
@@ -201,7 +204,7 @@ class NacosIntegrationTests extends NacosIntegrationTest {
     void 主动注销会在客户端仍连着时就删除端点() throws Exception {
         // 区别于「关闭应用」：这里客户端连接一直在，端点只可能是被 deregister 删掉的，而不是连接断开后被服务端摘除
         String name = uniqueId("yoke-dereg");
-        AiService client = NacosSupport.connect(nacosProps(true, false), TEST_WORKSPACE);
+        AiService client = NacosSupport.connect(nacosProps(), TEST_WORKSPACE);
         try {
             io.a2a.spec.AgentCard card = new io.a2a.spec.AgentCard.Builder().name(name).description("d")
                     .url("http://127.0.0.1:45678/a2a").version("1.0.0").protocolVersion("0.3.0").preferredTransport("JSONRPC")
@@ -257,8 +260,8 @@ class NacosIntegrationTests extends NacosIntegrationTest {
                         && Objects.nonNull(m.getTextContent()) && m.getTextContent().contains(userText)))
                 .filter(messages -> messages.stream().anyMatch(m -> m.getRole() == MsgRole.SYSTEM
                         && Objects.nonNull(m.getTextContent()) && m.getTextContent().contains("你是一个乐于助人的 AI 助手")))
-                .reduce((first, second) -> second).orElseThrow();
+                .reduce((_, second) -> second).orElseThrow();
         return call.stream().filter(m -> m.getRole() == MsgRole.SYSTEM)
-                .map(m -> m.getTextContent()).reduce("", (a, b) -> a + "\n" + b);
+                .map(Msg::getTextContent).reduce("", (a, b) -> a + "\n" + b);
     }
 }

@@ -107,6 +107,7 @@ public final class A2aRaw {
 
     /** 以 chunked（不声明 Content-Length）方式发送 POST /a2a，体是 {@code size} 个字节的空格。 */
     public Response postChunked(long size, String authorization) {
+        @SuppressWarnings("resource") // 请求发送时由 HttpClient 读取并关闭
         java.io.InputStream stream = new java.io.InputStream() {
             private long left = size;
 
@@ -129,8 +130,8 @@ public final class A2aRaw {
     }
 
     private Response execute(HttpRequest request) {
-        try {
-            HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             return new Response(response.statusCode(), response.body(),
                     response.headers().firstValue("WWW-Authenticate").orElse(null));
         } catch (IOException | InterruptedException e) {

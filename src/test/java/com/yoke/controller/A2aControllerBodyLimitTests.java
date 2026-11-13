@@ -13,6 +13,7 @@ import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletInputStream;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.http.ResponseEntity;
@@ -52,7 +53,8 @@ class A2aControllerBodyLimitTests {
         }
 
         @Override
-        public ServletInputStream getInputStream() {
+        @SuppressWarnings("resource") // 数据源由返回的 ServletInputStream 持有，并在它关闭时一起关闭
+        public @NonNull ServletInputStream getInputStream() {
             InputStream source = new InputStream() {
                 private long remaining = available;
 
@@ -67,7 +69,7 @@ class A2aControllerBodyLimitTests {
                 }
 
                 @Override
-                public int read(byte[] b, int off, int len) {
+                public int read(byte @NonNull [] b, int off, int len) {
                     if (remaining <= 0) {
                         return -1;
                     }
@@ -99,8 +101,13 @@ class A2aControllerBodyLimitTests {
                 }
 
                 @Override
-                public int read(byte[] b, int off, int len) throws IOException {
+                public int read(byte @NonNull [] b, int off, int len) throws IOException {
                     return source.read(b, off, len);
+                }
+
+                @Override
+                public void close() throws IOException {
+                    source.close();
                 }
             };
         }

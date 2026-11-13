@@ -13,6 +13,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.tool.Toolkit;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Mono;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 探明一件事：挂在主 Agent 上的 {@code onSystemPrompt} 中间件（Prompt 热更新就是这种）会不会被子 Agent 继承，
  * 也就是业务提示词会不会出现在子 Agent 的系统提示词里。用一个追加固定标记的同类中间件和脚本模型实测。
  */
+@Slf4j
 class PromptMiddlewareSubagentTests {
 
     private static final String MARK = "【来自中间件的标记】";
@@ -62,7 +64,7 @@ class PromptMiddlewareSubagentTests {
                 .filter(c -> !c.systemText().startsWith(PARENT_PROMPT) && !c.systemText().startsWith("You are a memory")).toList();
         assertThat(parentCalls).as("主 Agent 的系统提示词带标记").isNotEmpty().allMatch(c -> c.systemText().contains(MARK));
         assertThat(subCalls).as("子 Agent 确实被调用了").isNotEmpty();
-        System.out.println("SUBAGENT-INHERITS-SYSTEM-PROMPT-MIDDLEWARE=" + subCalls.stream().allMatch(c -> c.systemText().contains(MARK)));
+        log.info("SUBAGENT-INHERITS-SYSTEM-PROMPT-MIDDLEWARE={}", subCalls.stream().allMatch(c -> c.systemText().contains(MARK)));
         // 结论固化成断言，框架行为变化时这里会提醒
         assertThat(subCalls).allMatch(c -> c.systemText().contains(MARK));
     }

@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -100,7 +99,7 @@ public class A2aGateway {
      * 请求体一个字节都不读。这样未认证的调用者没法让服务器缓冲任意大的请求体。
      */
     public Reply preflight(Map<String, String> headers, long declaredLength) {
-        if (!authorized(headers)) {
+        if (tokenRejected(headers)) {
             return unauthorized();
         }
         if (declaredLength > maxBodyBytes) {
@@ -138,7 +137,7 @@ public class A2aGateway {
     }
 
     public Reply handle(String body, Map<String, String> headers) {
-        if (!authorized(headers)) {
+        if (tokenRejected(headers)) {
             return unauthorized();
         }
         // 大小只在字节层检查一次（preflight 的声明长度 + readBody 的限长读取）；这里不再对已解码的字符串重算字节数，
@@ -260,18 +259,19 @@ public class A2aGateway {
         return id.isNumber() ? id.numberValue() : id.asText();
     }
 
-    private boolean authorized(Map<String, String> headers) {
+    /** 配置了 token、而请求没带对的 token 时返回 true；没配 token 不校验。 */
+    private boolean tokenRejected(Map<String, String> headers) {
         if (Objects.isNull(tokenDigest)) {
-            return true;
+            return false;
         }
         String header = headers.entrySet().stream()
                 .filter(entry -> "authorization".equalsIgnoreCase(entry.getKey()))
                 .map(Map.Entry::getValue).findFirst().orElse(null);
         if (Objects.isNull(header) || !header.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            return false;
+            return true;
         }
         // 先各自取摘要再比较：长度固定，常量时间，也不泄露 token 的长度
-        return MessageDigest.isEqual(tokenDigest, sha256(header.substring(7).trim()));
+        return !MessageDigest.isEqual(tokenDigest, sha256(header.substring(7).trim()));
     }
 
     private static byte[] sha256(String value) {

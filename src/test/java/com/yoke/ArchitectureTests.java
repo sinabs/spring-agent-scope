@@ -126,7 +126,7 @@ class ArchitectureTests {
     @ArchTest
     static final ArchRule A2A的runner只依赖白名单里的框架类型 = noClasses().that().resideInAPackage("com.yoke.a2a.runner..")
             .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
-                    DescribedPredicate.not(new DescribedPredicate<JavaClass>("the runner allowed types " + RUNNER_ALLOWED) {
+                    DescribedPredicate.not(new DescribedPredicate<>("the runner allowed types " + RUNNER_ALLOWED) {
                         @Override
                         public boolean test(JavaClass input) {
                             return RUNNER_ALLOWED.contains(input.getName());
@@ -143,7 +143,7 @@ class ArchitectureTests {
     static final ArchRule Nacos包只依赖中间件SPI和官方nacos_a2a = noClasses().that().resideInAPackage("com.yoke.nacos..")
             .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
                     DescribedPredicate.not(resideInAPackage("io.agentscope.core.nacos.a2a..")),
-                    DescribedPredicate.not(new DescribedPredicate<JavaClass>("the nacos allowed types " + NACOS_ALLOWED) {
+                    DescribedPredicate.not(new DescribedPredicate<>("the nacos allowed types " + NACOS_ALLOWED) {
                         @Override
                         public boolean test(JavaClass input) {
                             return NACOS_ALLOWED.contains(input.getName());
