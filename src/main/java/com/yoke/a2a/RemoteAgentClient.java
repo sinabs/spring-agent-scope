@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
+import cn.hutool.core.util.StrUtil;
 import com.yoke.codec.MessageCodec;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
@@ -24,7 +25,6 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import org.springframework.util.StringUtils;
 
 /**
  * 把一个远端 A2A Agent 包成本地调用：用官方的 {@link A2aAgent} 发 {@code message/send}，拿回文本。
@@ -105,7 +105,7 @@ public class RemoteAgentClient {
     private boolean cardStaysInOrigin(AgentCard card) {
         try {
             String preferred = card.preferredTransport();
-            if (StringUtils.hasText(preferred) && !"JSONRPC".equalsIgnoreCase(preferred)) {
+            if (StrUtil.isNotBlank(preferred) && !"JSONRPC".equalsIgnoreCase(preferred)) {
                 return false;
             }
             if (!pinnedOrigin.equals(originOf(card.url()))) {
@@ -144,7 +144,7 @@ public class RemoteAgentClient {
 
     /** 协议 + 主机 + 端口（端口缺省时按协议补全），用来比较「是不是同一个服务」。 */
     public static String originOf(String url) {
-        if (!StringUtils.hasText(url)) {
+        if (!StrUtil.isNotBlank(url)) {
             return "";
         }
         URI uri = URI.create(url);
@@ -176,7 +176,7 @@ public class RemoteAgentClient {
         public PayloadAndHeaders intercept(String methodName, Object payload, Map<String, String> headers,
                 AgentCard agentCard, ClientCallContext context) {
             Object forwarded = payload;
-            if (payload instanceof SendMessageRequest request && StringUtils.hasText(sessionId)) {
+            if (payload instanceof SendMessageRequest request && StrUtil.isNotBlank(sessionId)) {
                 Message original = request.getParams().message();
                 Map<String, Object> metadata = new HashMap<>();
                 if (original.getMetadata() != null) {
@@ -189,7 +189,7 @@ public class RemoteAgentClient {
                         new MessageSendParams(message, params.configuration(), params.metadata()));
             }
             Map<String, String> allHeaders = new HashMap<>(headers == null ? Map.of() : headers);
-            if (StringUtils.hasText(token)) {
+            if (StrUtil.isNotBlank(token)) {
                 allHeaders.put("Authorization", "Bearer " + token);
             }
             return new PayloadAndHeaders(forwarded, allHeaders);

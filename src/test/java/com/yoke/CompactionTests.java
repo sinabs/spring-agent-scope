@@ -1,5 +1,6 @@
 package com.yoke;
 
+import java.util.Objects;
 import java.util.UUID;
 
 import com.yoke.controller.ChatController;
@@ -42,7 +43,7 @@ class CompactionTests extends RedisIntegrationTest {
 
         var calls = model.received.subList(before, model.received.size());
         assertThat(calls).as("出现过摘要调用").anyMatch(messages -> messages.stream()
-                .anyMatch(msg -> msg.getTextContent() != null && msg.getTextContent().contains("SESSION INTENT")));
+                .anyMatch(msg -> Objects.nonNull(msg.getTextContent()) && msg.getTextContent().contains("SESSION INTENT")));
     }
 
     /**
@@ -53,7 +54,7 @@ class CompactionTests extends RedisIntegrationTest {
         int size = -1;
         for (int i = from; i < model.received.size(); i++) {
             var messages = model.received.get(i);
-            boolean mentionsText = messages.stream().anyMatch(m -> m.getTextContent() != null && m.getTextContent().contains(text));
+            boolean mentionsText = messages.stream().anyMatch(m -> Objects.nonNull(m.getTextContent()) && m.getTextContent().contains(text));
             if (mentionsText && !model.receivedTools.get(i).isEmpty()) {
                 size = messages.size();
             }

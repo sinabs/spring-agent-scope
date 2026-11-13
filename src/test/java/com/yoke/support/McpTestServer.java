@@ -77,7 +77,7 @@ public final class McpTestServer implements AutoCloseable {
 
             Context context = tomcat.addContext("", base.getAbsolutePath());
             Tomcat.addServlet(context, "mcp", servlet).setAsyncSupported(true);
-            context.addServletMappingDecoded("/*", "mcp");
+            context.addServletMapping("/*", "mcp");
             context.addFilterDef(filterDef());
             context.addFilterMap(filterMap());
             tomcat.start();
@@ -103,9 +103,9 @@ public final class McpTestServer implements AutoCloseable {
                 .build();
         return McpServerFeatures.SyncToolSpecification.builder()
                 .tool(tool)
-                .callHandler((exchange, request) -> {
+                .callHandler((_, _) -> {
                     writeNoteCalls.incrementAndGet();
-                    return new McpSchema.CallToolResult("已写入", false);
+                    return McpSchema.CallToolResult.builder().addTextContent("已写入").isError(false).build();
                 })
                 .build();
     }
@@ -117,20 +117,20 @@ public final class McpTestServer implements AutoCloseable {
                 .name("echo")
                 .description("原样回显收到的文字，用来验证 MCP 连通")
                 .inputSchema(schema)
-                // 声明只读：2.0.4 对只读的 MCP 工具自动放行，其余都要求显式授权
+                // 声明只读：AgentScope 对只读的 MCP 工具自动放行，其余都要求显式授权
                 .annotations(new McpSchema.ToolAnnotations("echo", true, false, true, false, false))
                 .build();
         return McpServerFeatures.SyncToolSpecification.builder()
                 .tool(tool)
-                .callHandler((exchange, request) -> new McpSchema.CallToolResult(
-                        "echo: " + request.arguments().get("text"), false))
+                .callHandler((_, request) -> McpSchema.CallToolResult.builder()
+                        .addTextContent("echo: " + request.arguments().get("text")).isError(false).build())
                 .build();
     }
 
     private org.apache.tomcat.util.descriptor.web.FilterDef filterDef() {
         org.apache.tomcat.util.descriptor.web.FilterDef def = new org.apache.tomcat.util.descriptor.web.FilterDef();
         def.setFilterName("headers");
-        def.setFilter((jakarta.servlet.Filter) (request, response, chain) -> {
+        def.setFilter((request, response, chain) -> {
             // JSON-RPC 请求体按 UTF-8；Servlet 在 Content-Type 不带 charset 时默认按 ISO-8859-1 解码，中文会乱码
             request.setCharacterEncoding("UTF-8");
             if (request instanceof HttpServletRequest http) {

@@ -8,11 +8,14 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
+import cn.hutool.core.util.StrUtil;
+import com.yoke.model.UserContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Yoke 自带的几个通用工具。
@@ -24,9 +27,8 @@ import org.slf4j.LoggerFactory;
  * <p>description 写的是「什么时候该用它」而不是功能罗列：模型靠它决定要不要调用。
  * 参数名用 {@code @ToolParam(name = ...)} 显式声明，不依赖编译参数。
  */
+@Slf4j
 public class ChatTools {
-
-    private static final Logger log = LoggerFactory.getLogger(ChatTools.class);
 
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss xxx");
 
@@ -55,11 +57,12 @@ public class ChatTools {
     public String getCurrentTime(
             @ToolParam(name = "timezone", required = false,
                     description = "IANA 时区名，例如 Asia/Shanghai、America/New_York；不传时用 UTC") String timezone) {
+        String requested = Optional.ofNullable(timezone).filter(StrUtil::isNotBlank).map(String::trim).orElse("UTC");
         ZoneId zone;
         try {
-            zone = timezone == null || timezone.isBlank() ? ZoneId.of("UTC") : ZoneId.of(timezone.trim());
+            zone = ZoneId.of(requested);
         } catch (DateTimeException e) {
-            return "无法识别的时区：" + abbreviate(timezone) + "。请使用 IANA 时区名，例如 Asia/Shanghai。";
+            return "无法识别的时区：" + abbreviate(requested) + "。请使用 IANA 时区名，例如 Asia/Shanghai。";
         }
         ZonedDateTime now = ZonedDateTime.ofInstant(Instant.now(clock), zone);
         return now.format(TIME_FORMAT) + "（" + zone.getId() + "，" + now.getDayOfWeek() + "）";
@@ -86,11 +89,11 @@ public class ChatTools {
     public String listMyNotes(
             UserContext user,
             @ToolParam(name = "limit", required = false, description = "最多返回几条，默认 5，上限 20") Integer limit) {
-        if (user == null || user.userId() == null || user.userId().isBlank()) {
+        if (Objects.isNull(user) || StrUtil.isBlank(user.userId())) {
             log.warn("list_my_notes 被调用但 RuntimeContext 里没有 UserContext，拒绝返回数据");
             return "无法确定当前用户，已拒绝返回笔记。";
         }
-        int max = limit == null ? 5 : Math.clamp(limit, 1, MAX_NOTES);
+        int max = Optional.ofNullable(limit).map(value -> Math.clamp(value, 1, MAX_NOTES)).orElse(5);
         List<String> notes = NOTES.getOrDefault(user.userId(), List.of());
         if (notes.isEmpty()) {
             return "当前用户（" + user.userId() + "）还没有笔记。";

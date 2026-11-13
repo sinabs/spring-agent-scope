@@ -47,6 +47,14 @@ yoke:
   redis:
     # 所有 Redis 键的统一前缀；连接串 uri 见各环境文件，没有默认值
     key-prefix: "yoke:"
+    # uri 的写法示例（各环境文件里通过 YOKE_REDIS_URI 提供，下面都是注释，不会生效）：
+    # 本机无密码：          redis://127.0.0.1:6379
+    # 只有密码：            redis://:your-password@redis.example.com:6379
+    # 用户名加密码（ACL）：  redis://yoke:your-password@redis.example.com:6379
+    # 指定 DB（默认 0）：    redis://127.0.0.1:6379/2
+    # 密码加 DB：           redis://:your-password@redis.example.com:6379/2
+    # TLS：                 rediss://:your-password@redis.example.com:6380
+    # 密码里有 @ / : 等特殊字符时需要 URL 编码，例如 p@ss 写成 p%40ss
   compaction:
     # 对话消息达到 trigger-messages 条就压缩，压缩后原样保留最近 keep-messages 条；<=0 的非法值回落到 30 / 10
     trigger-messages: 30
@@ -54,7 +62,8 @@ yoke:
   knowledge:
     # 知识库检索（retrieve 工具）：语料是 classpath:knowledge/*.md。
     # embedding 的 model-name 和 api-key 都有值才启用向量检索（与关键词检索融合）；任意一个为空就只用关键词检索，
-    # 向量化服务出错时也会自动退回关键词。密钥见各环境文件，base-url 可换成其他 OpenAI 兼容服务
+    # 向量化服务出错时也会自动退回关键词。密钥见各环境文件，base-url 可换成其他 OpenAI 兼容服务。
+    # protocol 默认 openai（OpenAI 兼容的 /embeddings）；火山方舟的多模态向量模型要写 ark-multimodal
     embedding:
       model-name: ${YOKE_EMBEDDING_MODEL:}
       base-url: ${YOKE_EMBEDDING_BASE_URL:https://api.openai.com/v1}
@@ -126,7 +135,7 @@ agentscope:
     # 使用其他 OpenAI 兼容服务时设置 base-url，例如 DashScope：
     # base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
   agent:
-    # 关闭官方的单例 Agent：Agent 由 AgentConfiguration 里的 HarnessAgentFactory 在每次请求时新建
+    # 关闭官方的单例 Agent：Agent 由 HarnessAgentFactory 在每次请求时新建
     # （Builder 也是每次现建，不共享）。name、sys-prompt、max-iters 仍然生效，被工厂读取
     enabled: false
     name: Yoke

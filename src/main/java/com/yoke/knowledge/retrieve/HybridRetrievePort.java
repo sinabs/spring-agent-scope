@@ -1,12 +1,14 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.retrieve;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.yoke.model.Passage;
+import com.yoke.knowledge.RetrievePort;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -24,9 +26,8 @@ import reactor.core.publisher.Mono;
  * </ul>
  * 融合只发生在成功的路之间，所以向量路挂掉时结果自然退化成纯关键词检索。
  */
+@Slf4j
 public final class HybridRetrievePort implements RetrievePort {
-
-    private static final Logger log = LoggerFactory.getLogger(HybridRetrievePort.class);
 
     /** RRF 常数。 */
     static final int RRF_K = 60;
@@ -44,10 +45,15 @@ public final class HybridRetrievePort implements RetrievePort {
     }
 
     @Override
+    public void warmUp() {
+        channels.forEach(RetrievePort::warmUp);
+    }
+
+    @Override
     public Mono<List<Passage>> retrieve(String query, int topK) {
         int candidates = Math.max(topK * CANDIDATE_FACTOR, 10);
         return Flux.fromIterable(channels)
-                .concatMap(channel -> channel.retrieve(query, candidates)
+                .flatMapSequential(channel -> channel.retrieve(query, candidates)
                         .defaultIfEmpty(List.of())
                         .map(Outcome::success)
                         .onErrorResume(error -> {
@@ -57,7 +63,7 @@ public final class HybridRetrievePort implements RetrievePort {
                 .collectList()
                 .flatMap(outcomes -> {
                     List<List<Passage>> succeeded = outcomes.stream()
-                            .filter(outcome -> outcome.error() == null)
+                            .filter(outcome -> Objects.isNull(outcome.error()))
                             .map(Outcome::passages)
                             .toList();
                     if (succeeded.isEmpty()) {

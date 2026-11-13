@@ -23,16 +23,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 子 Agent 的声明与权限。最关键的是安全回归：2.0.4 的子 Agent 不继承父 Agent 的 {@code disableWebTools}，
+ * 子 Agent 的声明与权限。最关键的是安全回归：AgentScope 的子 Agent 不继承父 Agent 的 {@code disableWebTools}，
  * 所以这里用「记录工具清单的假模型」真实驱动每一种子 Agent 跑一次，枚举它实际能看到的工具。
  */
 class SubagentTests {
 
-    /** 对外服务的 Agent 任何一层都不该看到的工具：联网、文件读写、命令执行。 */
+    /**
+     * 对外服务的 Agent 任何一层都不该看到的工具：联网、文件读写、命令执行，
+     * 以及能读到别的用户记忆和会话的读类工具（路径由模型给的参数决定，@SafeId 管不到）。
+     * 只保留 memory_save，它只往当前用户固定的记忆文件里追加。
+     */
     private static final Set<String> NEVER = Set.of(
             "web_fetch", "web_search",
             "read_file", "write_file", "edit_file", "list_files", "glob_files", "grep_files",
-            "execute");
+            "execute",
+            "memory_get", "memory_search", "session_history", "session_list", "session_search");
 
     private static final String PARENT_PROMPT = "你是测试助手";
 
@@ -120,8 +125,8 @@ class SubagentTests {
 
     @Test
     void 声明文件忘了写tools白名单时也拿不到联网工具_靠的是父Agent的deny名单(@TempDir Path workspace) throws IOException {
-        // 2.0.4 里 tools 为空表示继承父 Agent 的全部工具；这是最容易写错的地方，所以要有第二道防线
-        TestAgents.factory(new ScriptedModel(c -> ScriptedModel.text("x")), workspace, template());
+        // AgentScope 里 tools 为空表示继承父 Agent 的全部工具；这是最容易写错的地方，所以要有第二道防线
+        TestAgents.factory(new ScriptedModel(_ -> ScriptedModel.text("x")), workspace, template());
         Files.writeString(workspace.resolve("subagents/open.md"), """
                 ---
                 description: 忘了写 tools 白名单的子 Agent
@@ -159,7 +164,7 @@ class SubagentTests {
 
         run(delegatingTo("summarizer"), workspace);
 
-        assertThat(marker).as("Yoke 显式传了 toolsConfig，2.0.4 就不再读 tools.json").doesNotExist();
+        assertThat(marker).as("Yoke 显式传了 toolsConfig，AgentScope 就不再读 tools.json").doesNotExist();
     }
 
     @Test
@@ -169,14 +174,15 @@ class SubagentTests {
                 {"mcpServers": {"evil": {"transport": "stdio", "command": "touch", "args": ["%s"], "initializationTimeout": "PT1S"}}}
                 """.formatted(marker));
 
-        try (HarnessAgent agent = HarnessAgent.builder().name("plain").model(new ScriptedModel(c -> ScriptedModel.text("x")))
-                .workspace(workspace).stateStore(new io.agentscope.core.state.InMemoryAgentStateStore()).build()) {
+        try {
             // 构造即触发：这就是要堵的口子
+            HarnessAgent.builder().name("plain").model(new ScriptedModel(_ -> ScriptedModel.text("x")))
+                    .workspace(workspace).stateStore(new io.agentscope.core.state.InMemoryAgentStateStore()).build().close();
         } catch (RuntimeException ignored) {
             // 握手失败无所谓，进程已经被拉起过
         }
 
-        assertThat(marker).as("没有显式 toolsConfig 时，工作区里的 tools.json 能让 2.0.4 启动任意本地进程").exists();
+        assertThat(marker).as("没有显式 toolsConfig 时，工作区里的 tools.json 能让 AgentScope 启动任意本地进程").exists();
     }
 
     // ---- 声明与冲突 ----
@@ -228,7 +234,7 @@ class SubagentTests {
     @Test
     void 实测2_0_4的同id冲突行为_工作区文件静默覆盖代码声明而不是报错(@TempDir Path workspace) throws IOException {
         // 这是对框架行为的记录性测试：Yoke 自己的检查在它之前拦截，这里绕开检查，看框架本身怎么处理
-        ScriptedModel model = new ScriptedModel(call -> ScriptedModel.text("ok"));
+        ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("ok"));
         var factory = TestAgents.factory(model, workspace, template());
         Files.writeString(workspace.resolve("subagents/summarizer.md"), """
                 ---
@@ -258,7 +264,7 @@ class SubagentTests {
 
     @Test
     void 工作区里已有的同名声明文件会让启动失败_即使它不是随应用发布的(@TempDir Path workspace) throws IOException {
-        // yoke.workspace 是持久目录：手放的、旧版本遗留的 summarizer.md 在 2.0.4 里会静默替换代码声明
+        // yoke.workspace 是持久目录：手放的、旧版本遗留的 summarizer.md 在 AgentScope 里会静默替换代码声明
         Files.createDirectories(workspace.resolve("subagents"));
         Files.writeString(workspace.resolve("subagents/summarizer.md"), "---\ndescription: 遗留文件\n---\n旧提示词");
 
@@ -274,7 +280,7 @@ class SubagentTests {
         assertThatThrownBy(() -> YokeSubagents.prepareWorkspace(workspace, YokeSubagents.programmatic()))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("general-purpose");
         // 同样的预置文件走工厂（TestAgents 与线上同一条准备流程）也一样失败
-        assertThatThrownBy(() -> TestAgents.factory(new ScriptedModel(c -> ScriptedModel.text("x")), workspace, template()))
+        assertThatThrownBy(() -> TestAgents.factory(new ScriptedModel(_ -> ScriptedModel.text("x")), workspace, template()))
                 .isInstanceOf(IllegalStateException.class);
     }
 

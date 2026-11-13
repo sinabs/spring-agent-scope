@@ -5,16 +5,18 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
+import cn.hutool.core.util.StrUtil;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
-import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 
 /**
@@ -52,8 +54,8 @@ public record YokeProperties(
 
         /** record 自动生成的 toString 会原样带出连接串，日志或调试输出里就泄漏密码，所以这里脱敏。 */
         @Override
-        public String toString() {
-            return "Redis[uri=" + (uri == null ? null : RedisConfiguration.redact(uri)) + ", keyPrefix=" + keyPrefix + "]";
+        public @NonNull String toString() {
+            return "Redis[uri=" + Optional.ofNullable(uri).map(RedisConfiguration::redact).orElse(null) + ", keyPrefix=" + keyPrefix + "]";
         }
     }
 
@@ -66,17 +68,17 @@ public record YokeProperties(
      * @param triggerMessages 对话消息达到这个条数就触发压缩
      * @param keepMessages    压缩后原样保留最近多少条
      */
+    @Slf4j
     public record Compaction(
             @DefaultValue("30") int triggerMessages,
             @DefaultValue("10") int keepMessages) {
-
-        private static final Logger log = LoggerFactory.getLogger(Compaction.class);
 
         public static final int DEFAULT_TRIGGER_MESSAGES = 30;
         public static final int DEFAULT_KEEP_MESSAGES = 10;
 
         public Compaction {
-            if (triggerMessages <= 0 || keepMessages <= 0 || keepMessages >= triggerMessages) {
+            // keepMessages > 0 且 keepMessages < triggerMessages 已经蕴含 triggerMessages > 0，所以不用单独判断触发条数
+            if (keepMessages <= 0 || keepMessages >= triggerMessages) {
                 log.warn("压缩配置不合法（trigger-messages={}, keep-messages={}），回落到默认值 {} / {}",
                         triggerMessages, keepMessages, DEFAULT_TRIGGER_MESSAGES, DEFAULT_KEEP_MESSAGES);
                 triggerMessages = DEFAULT_TRIGGER_MESSAGES;
@@ -93,28 +95,38 @@ public record YokeProperties(
     public record Knowledge(@DefaultValue Embedding embedding) {
 
         /**
-         * 向量化服务（OpenAI 兼容的 {@code /embeddings} 接口），{@code modelName} 和 {@code apiKey} 都有值才启用。
+         * 向量化服务，{@code modelName} 和 {@code apiKey} 都有值才启用。
          *
          * @param modelName  向量模型名，例如 text-embedding-3-small；为空表示不启用向量检索
          * @param baseUrl    接口根地址，默认 OpenAI 官方；用 DashScope 等兼容服务时改它
          * @param apiKey     密钥，只从环境变量或外部配置提供，不要写进仓库
-         * @param dimensions 向量维度，可选；不传用模型默认值
+         * @param dimensions 向量维度，可选；不传用模型默认值。方舟多模态协议会校验返回的维度与它一致
+         * @param protocol   接口协议，默认 OpenAI 兼容的 {@code /embeddings}；火山方舟的多模态向量模型要选 ark-multimodal
          */
         public record Embedding(
                 String modelName,
                 @DefaultValue("https://api.openai.com/v1") String baseUrl,
                 String apiKey,
-                Integer dimensions) {
+                Integer dimensions,
+                @DefaultValue("openai") Protocol protocol) {
+
+            /** 向量化接口的协议。 */
+            public enum Protocol {
+                /** OpenAI 兼容的 {@code POST /embeddings}，支持批量。 */
+                OPENAI,
+                /** 火山方舟的 {@code POST /embeddings/multimodal}，一条文本一次请求。 */
+                ARK_MULTIMODAL
+            }
 
             public boolean enabled() {
-                return StringUtils.hasText(modelName) && StringUtils.hasText(apiKey);
+                return StrUtil.isNotBlank(modelName) && StrUtil.isNotBlank(apiKey);
             }
 
             /** 密钥不进日志和调试输出。 */
             @Override
-            public String toString() {
+            public @NonNull String toString() {
                 return "Embedding[modelName=" + modelName + ", baseUrl=" + baseUrl + ", apiKey="
-                        + (StringUtils.hasText(apiKey) ? "***" : null) + ", dimensions=" + dimensions + "]";
+                        + (StrUtil.isNotBlank(apiKey) ? "***" : null) + ", dimensions=" + dimensions + ", protocol=" + protocol + "]";
             }
         }
     }
@@ -127,7 +139,7 @@ public record YokeProperties(
     public record Mcp(@DefaultValue List<@Valid McpServer> servers) {
 
         public Mcp {
-            servers = servers == null ? List.of() : List.copyOf(servers);
+            servers = Optional.ofNullable(servers).map(List::copyOf).orElse(List.of());
             long distinct = servers.stream().map(McpServer::name).distinct().count();
             if (distinct != servers.size()) {
                 throw new IllegalArgumentException("yoke.mcp.servers 里的 name 不能重复：每个服务的工具靠它区分和释放");
@@ -160,28 +172,28 @@ public record YokeProperties(
         private static final Set<String> ALLOWED = Set.of(SSE, STREAMABLE_HTTP);
 
         public McpServer {
-            String normalized = transport == null ? "" : transport.trim().toLowerCase(Locale.ROOT);
+            String normalized = Optional.ofNullable(transport).map(t -> t.trim().toLowerCase(Locale.ROOT)).orElse("");
             if (!ALLOWED.contains(normalized)) {
                 throw new IllegalArgumentException("yoke.mcp.servers[" + name + "].transport=" + transport
                         + " 不被允许：运行态只支持 HTTP 传输（sse 或 streamable-http）。"
                         + "stdio 会按配置启动本地进程，存在命令注入风险，所以被拒绝");
             }
             transport = normalized;
-            if (name == null || name.isBlank() || url == null || url.isBlank()) {
+            if (StrUtil.isBlank(name) || StrUtil.isBlank(url)) {
                 throw new IllegalArgumentException("yoke.mcp.servers 的 name 和 url 不能为空");
             }
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 throw new IllegalArgumentException("yoke.mcp.servers[" + name + "].url 必须以 http:// 或 https:// 开头");
             }
-            if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+            if (Objects.isNull(timeout) || timeout.isZero() || timeout.isNegative()) {
                 timeout = Duration.ofSeconds(30);
             }
-            headers = headers == null ? Map.of() : Map.copyOf(headers);
+            headers = Optional.ofNullable(headers).map(Map::copyOf).orElse(Map.of());
         }
 
         /** 地址和请求头里可能带令牌：toString 只留协议、主机和端口，请求头只列名字。 */
         @Override
-        public String toString() {
+        public @NonNull String toString() {
             String origin;
             try {
                 URI uri = URI.create(url);
@@ -244,7 +256,7 @@ public record YokeProperties(
             }
 
             public boolean tokenConfigured() {
-                return StringUtils.hasText(token);
+                return StrUtil.isNotBlank(token);
             }
 
             /** token 不进日志和调试输出。 */
@@ -309,14 +321,14 @@ public record YokeProperties(
             }
 
             public boolean configured() {
-                return StringUtils.hasText(url) || StringUtils.hasText(agentName);
+                return StrUtil.isNotBlank(url) || StrUtil.isNotBlank(agentName);
             }
 
             /** 地址里可能带路径或参数，token 更不能进日志：只留名字、是否有 token。 */
             @Override
             public String toString() {
                 return "Remote[url=" + url + ", agentName=" + agentName + ", token="
-                        + (StringUtils.hasText(token) ? "***" : null) + ", timeout=" + timeout + "]";
+                        + (StrUtil.isNotBlank(token) ? "***" : null) + ", timeout=" + timeout + "]";
             }
         }
     }
@@ -355,7 +367,7 @@ public record YokeProperties(
         @Override
         public String toString() {
             return "Nacos[serverAddr=" + serverAddr + ", namespace=" + namespace + ", username=" + username
-                    + ", password=" + (StringUtils.hasText(password) ? "***" : null) + ", a2a=" + a2a
+                    + ", password=" + (StrUtil.isNotBlank(password) ? "***" : null) + ", a2a=" + a2a
                     + ", prompt=" + prompt + "]";
         }
 

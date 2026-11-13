@@ -1,4 +1,4 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.embed;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.sun.net.httpserver.HttpServer;
+import com.yoke.knowledge.retrieve.VectorRetrievePort;
+import com.yoke.model.Passage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

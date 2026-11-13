@@ -1,9 +1,13 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.retrieve;
 
+import com.yoke.knowledge.EmbeddingClient;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.yoke.model.Passage;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
@@ -45,6 +49,16 @@ class VectorRetrievePortTests {
     }
 
     @Test
+    void 低于最低相似度的片段不返回_问无关问题时检索不到() {
+        VectorRetrievePort port = new VectorRetrievePort(PASSAGES, new KeywordEmbedding());
+
+        // 查询里没有任何已知关键字，与所有片段的相似度都接近 0
+        assertThat(port.retrieve("今天吃什么", 3).block()).isEmpty();
+        // 只有相关的片段留下，不会为了凑够 K 条把无关的也带上
+        assertThat(port.retrieve("Redis", 3).block()).extracting(Passage::id).containsExactly("a");
+    }
+
+    @Test
     void 片段向量只算一次_之后每次检索只多一次查询向量化() {
         KeywordEmbedding embedding = new KeywordEmbedding();
         VectorRetrievePort port = new VectorRetrievePort(PASSAGES, embedding);
@@ -56,6 +70,40 @@ class VectorRetrievePortTests {
         // 1 次建索引（3 个片段一批）+ 3 次查询
         assertThat(embedding.calls).hasValue(4);
         assertThat(embedding.batchSizes.getFirst()).isEqualTo(3);
+    }
+
+    @Test
+    void 预建索引在后台完成_之后的检索只需要向量化查询() throws InterruptedException {
+        CountDownLatch indexed = new CountDownLatch(1);
+        KeywordEmbedding embedding = new KeywordEmbedding() {
+            @Override
+            public synchronized Mono<List<double[]>> embed(List<String> texts) {
+                return super.embed(texts).doOnSuccess(_ -> indexed.countDown());
+            }
+        };
+        VectorRetrievePort port = new VectorRetrievePort(PASSAGES, embedding);
+
+        port.warmUp();
+        // 预建在 boundedElastic 上跑，warmUp 本身立即返回；等它把片段向量算完
+        assertThat(indexed.await(5, TimeUnit.SECONDS)).as("还没有任何检索，片段已经向量化").isTrue();
+        assertThat(embedding.calls).hasValue(1);
+
+        port.retrieve("Redis", 1).block();
+        assertThat(embedding.calls).as("检索时只多一次查询向量化").hasValue(2);
+    }
+
+    @Test
+    void 预建失败不抛出_第一次检索时重新建索引() {
+        KeywordEmbedding embedding = new KeywordEmbedding();
+        embedding.failNext = true;
+        VectorRetrievePort port = new VectorRetrievePort(PASSAGES, embedding);
+
+        port.warmUp();
+        // 预建还在途时来的检索会等同一个索引，预建失败它也跟着失败（上层 Hybrid 会降级到关键词），这里不关心它的结果
+        port.retrieve("Redis", 1).onErrorResume(_ -> Mono.empty()).block();
+
+        assertThat(port.retrieve("Redis", 1).block()).as("失败没有被缓存，之后的检索重新建索引")
+                .extracting(Passage::id).containsExactly("a");
     }
 
     @Test
@@ -84,7 +132,7 @@ class VectorRetrievePortTests {
 
     @Test
     void 向量化返回条数不对时报错() {
-        EmbeddingClient broken = texts -> Mono.just(List.of(new double[] {1}));
+        EmbeddingClient broken = _ -> Mono.just(List.of(new double[] {1}));
         VectorRetrievePort port = new VectorRetrievePort(PASSAGES, broken);
 
         assertThatThrownBy(() -> port.retrieve("Redis", 1).block()).hasMessageContaining("不一致");

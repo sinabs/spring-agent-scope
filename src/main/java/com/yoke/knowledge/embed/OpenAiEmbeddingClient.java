@@ -1,11 +1,14 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.embed;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
+import com.yoke.knowledge.EmbeddingClient;
+import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -15,7 +18,7 @@ import org.springframework.web.client.RestClient;
 /**
  * 调用 OpenAI 兼容的 {@code POST {baseUrl}/embeddings} 接口。
  *
- * <p>为什么自己写而不用框架的 {@code OpenAITextEmbedding}：它在 rag-simple 模块里。2.0.4 里 agentscope-core 的
+ * <p>为什么自己写而不用框架的 {@code OpenAITextEmbedding}：它在 rag-simple 模块里。AgentScope 里 agentscope-core 的
  * {@code core/rag} 包（{@code Knowledge}、{@code Document}、{@code RetrieveConfig}）已整体标记为
  * {@code @Deprecated(forRemoval = true, since = "2.0.0")}；rag-simple 的 pom 还把 Qdrant client、Milvus sdk、
  * elasticsearch-java、postgresql、pgvector、pdfbox、poi-ooxml、tika-core、tika-parsers-standard-package、
@@ -25,17 +28,12 @@ import org.springframework.web.client.RestClient;
  * <p>隐私：用户的检索问题和知识库语料会发送给配置的 embedding 服务提供方。
  * RestClient 是阻塞的，所以放到 boundedElastic 上执行，不占用响应式线程。
  */
+@RequiredArgsConstructor
 public final class OpenAiEmbeddingClient implements EmbeddingClient {
 
     private final RestClient client;
     private final String modelName;
     private final Integer dimensions;
-
-    public OpenAiEmbeddingClient(RestClient client, String modelName, Integer dimensions) {
-        this.client = client;
-        this.modelName = modelName;
-        this.dimensions = dimensions;
-    }
 
     @Override
     public Mono<List<double[]>> embed(List<String> texts) {
@@ -48,7 +46,7 @@ public final class OpenAiEmbeddingClient implements EmbeddingClient {
         body.put("model", modelName);
         body.put("input", texts);
         body.put("encoding_format", "float");
-        if (dimensions != null) {
+        if (Objects.nonNull(dimensions)) {
             body.put("dimensions", dimensions);
         }
         Map<String, Object> response = client.post()
@@ -57,7 +55,7 @@ public final class OpenAiEmbeddingClient implements EmbeddingClient {
                 .body(body)
                 .retrieve()
                 .body(Map.class);
-        if (response == null || !(response.get("data") instanceof List<?> data) || data.size() != texts.size()) {
+        if (Objects.isNull(response) || !(response.get("data") instanceof List<?> data) || data.size() != texts.size()) {
             throw new IllegalStateException("向量化接口返回的条数与请求不一致");
         }
         List<Map<String, Object>> items = new ArrayList<>();

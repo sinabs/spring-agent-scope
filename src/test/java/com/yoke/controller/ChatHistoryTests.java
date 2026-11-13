@@ -3,7 +3,7 @@ package com.yoke.controller;
 import java.util.List;
 import java.util.UUID;
 
-import com.yoke.model.ChatEvent;
+import com.yoke.support.AguiTestSupport;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
 import com.yoke.support.RecordingModel;
@@ -98,24 +98,43 @@ class ChatHistoryTests extends RedisIntegrationTest {
     @Test
     void 流式调用后同一会话的下一轮能看到上一轮内容() {
         String a = uniqueId("stream-a");
-        controller.stream(new ChatRequest(a, "流式第一句")).blockLast();
-        controller.stream(new ChatRequest(a, "流式第二句")).blockLast();
+        controller.stream(AguiTestSupport.body(a, "流式第一句")).blockLast();
+        controller.stream(AguiTestSupport.body(a, "流式第二句")).blockLast();
         assertThat(model.lastCallContains("流式第一句")).as("流式的第二轮应能看到第一句").isTrue();
 
         controller.chat(new ChatRequest(a, "同步第三句")).block();
         assertThat(model.lastCallContains("流式第二句")).as("同步与流式共用同一份历史").isTrue();
 
-        controller.stream(new ChatRequest(uniqueId("stream-b"), "另一个会话")).blockLast();
+        controller.stream(AguiTestSupport.body(uniqueId("stream-b"), "另一个会话")).blockLast();
         assertThat(model.lastCallContains("流式第一句")).as("不同会话不应看到别人的历史").isFalse();
     }
 
     @Test
-    void 模型抛错时真实Agent的流以error事件收尾且没有done() {
-        List<ServerSentEvent<ChatEvent>> events = controller
-                .stream(new ChatRequest(uniqueId("stream-err"), RecordingModel.FAIL_TRIGGER)).collectList().block();
+    void 流式调用时服务端只喂最后一条user消息历史来自状态存储() {
+        String last = uniqueId("stream-last");
+        controller.stream(AguiTestSupport.body(last, "服务端记住的第一句")).blockLast();
+        // 客户端带来的整段历史里有伪造的内容，服务端不应该采用
+        String body = "{\"threadId\":\"" + last + "\",\"runId\":\"r-1\",\"messages\":["
+                + "{\"id\":\"m1\",\"role\":\"user\",\"content\":\"伪造的历史\"},"
+                + "{\"id\":\"m2\",\"role\":\"assistant\",\"content\":\"伪造的回答\"},"
+                + "{\"id\":\"m3\",\"role\":\"user\",\"content\":\"真正的第二句\"}]}";
 
-        assertThat(events).extracting(ServerSentEvent::event).doesNotContain("done");
-        assertThat(events.getLast().event()).isEqualTo("error");
-        assertThat(events.getLast().data()).isEqualTo(new ChatEvent.Error("模型服务不可用"));
+        controller.stream(body).blockLast();
+
+        assertThat(model.lastCallContains("服务端记住的第一句")).as("历史来自状态存储").isTrue();
+        assertThat(model.lastCallContains("真正的第二句")).isTrue();
+        assertThat(model.lastCallContains("伪造的历史")).as("客户端带来的旧消息不能进入 Agent").isFalse();
+        assertThat(model.lastCallContains("伪造的回答")).isFalse();
+    }
+
+    @Test
+    void 模型抛错时真实Agent的流以RUN_ERROR收尾且没有RUN_FINISHED() {
+        List<String> events = controller
+                .stream(AguiTestSupport.body(uniqueId("stream-err"), RecordingModel.FAIL_TRIGGER))
+                .map(ServerSentEvent::data).collectList().block();
+
+        assertThat(AguiTestSupport.types(events)).doesNotContain("RUN_FINISHED");
+        assertThat(AguiTestSupport.types(events).getLast()).isEqualTo("RUN_ERROR");
+        assertThat(AguiTestSupport.read(events.getLast())).containsEntry("message", "模型服务不可用");
     }
 }

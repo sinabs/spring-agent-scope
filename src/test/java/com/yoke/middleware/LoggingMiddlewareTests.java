@@ -57,7 +57,7 @@ class LoggingMiddlewareTests {
 
     @Test
     void 整次调用完成时记录agentId和会话以及耗时() {
-        middleware.onAgent(agent, ctx, new AgentInput(List.of()), in -> Flux.<AgentEvent>empty()).blockLast();
+        middleware.onAgent(agent, ctx, new AgentInput(List.of()), _ -> Flux.empty()).blockLast();
 
         assertThat(messages()).singleElement().satisfies(message -> assertThat(message)
                 .contains("agent 完成", "agent=Yoke", "agentId=agent-1", "userId=alice", "sessionId=s-1", "耗时="));
@@ -69,7 +69,7 @@ class LoggingMiddlewareTests {
         when(model.getModelName()).thenReturn("gpt-test");
 
         middleware.onModelCall(agent, ctx, new ModelCallInput(List.of(), List.of(), null, model),
-                in -> Flux.<AgentEvent>empty()).blockLast();
+                _ -> Flux.empty()).blockLast();
 
         assertThat(messages()).singleElement().satisfies(message -> assertThat(message)
                 .contains("model 完成", "model=gpt-test"));
@@ -80,7 +80,7 @@ class LoggingMiddlewareTests {
         ToolUseBlock call = ToolUseBlock.builder().id("c1").name("memory_search")
                 .input(Map.of("query", "我的银行卡密码是123456")).build();
 
-        middleware.onActing(agent, ctx, new ActingInput(List.of(call)), in -> Flux.<AgentEvent>empty()).blockLast();
+        middleware.onActing(agent, ctx, new ActingInput(List.of(call)), _ -> Flux.empty()).blockLast();
 
         assertThat(messages()).singleElement().satisfies(message -> assertThat(message)
                 .contains("acting 完成", "tools=[memory_search]")
@@ -90,7 +90,7 @@ class LoggingMiddlewareTests {
     @Test
     void 出错时记录warn且异常继续向上抛() {
         assertThatThrownBy(() -> middleware.onAgent(agent, ctx, new AgentInput(List.of()),
-                in -> Flux.<AgentEvent>error(new IllegalStateException("密钥是 sk-secret"))).blockLast())
+                _ -> Flux.error(new IllegalStateException("密钥是 sk-secret"))).blockLast())
                 .hasMessage("密钥是 sk-secret");
 
         assertThat(logs.list).singleElement().satisfies(event -> {
@@ -102,7 +102,7 @@ class LoggingMiddlewareTests {
 
     @Test
     void 被取消时记录被取消() {
-        Flux<AgentEvent> flux = middleware.onAgent(agent, ctx, new AgentInput(List.of()), in -> Flux.<AgentEvent>never());
+        Flux<AgentEvent> flux = middleware.onAgent(agent, ctx, new AgentInput(List.of()), _ -> Flux.never());
 
         flux.subscribe().dispose();
 
@@ -111,7 +111,7 @@ class LoggingMiddlewareTests {
 
     @Test
     void 订阅之前不计时也不打日志() {
-        middleware.onAgent(agent, ctx, new AgentInput(List.of()), in -> Flux.<AgentEvent>empty());
+        middleware.onAgent(agent, ctx, new AgentInput(List.of()), _ -> Flux.empty());
 
         assertThat(logs.list).isEmpty();
     }

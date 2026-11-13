@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.Properties;
 import java.util.UUID;
 
+import cn.hutool.core.util.StrUtil;
 import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.ai.AiFactory;
 import com.alibaba.nacos.api.ai.AiService;
@@ -11,7 +12,6 @@ import com.alibaba.nacos.api.exception.NacosException;
 import com.yoke.config.YokeProperties;
 import lombok.extern.slf4j.Slf4j;
 
-import org.springframework.util.StringUtils;
 
 /**
  * Nacos 客户端的创建与启动探活。
@@ -30,13 +30,13 @@ public final class NacosSupport {
     static Properties clientProperties(YokeProperties.Nacos nacos) {
         Properties props = new Properties();
         props.setProperty(PropertyKeyConst.SERVER_ADDR, nacos.serverAddr());
-        if (StringUtils.hasText(nacos.namespace())) {
+        if (StrUtil.isNotBlank(nacos.namespace())) {
             props.setProperty(PropertyKeyConst.NAMESPACE, nacos.namespace());
         }
-        if (StringUtils.hasText(nacos.username())) {
+        if (StrUtil.isNotBlank(nacos.username())) {
             props.setProperty(PropertyKeyConst.USERNAME, nacos.username());
         }
-        if (StringUtils.hasText(nacos.password())) {
+        if (StrUtil.isNotBlank(nacos.password())) {
             props.setProperty(PropertyKeyConst.PASSWORD, nacos.password());
         }
         return props;

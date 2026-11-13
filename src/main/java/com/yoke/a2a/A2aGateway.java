@@ -9,6 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+import cn.hutool.core.util.StrUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -34,7 +35,6 @@ import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import lombok.extern.slf4j.Slf4j;
 
-import org.springframework.util.StringUtils;
 
 /**
  * A2A 服务端的入口网关：HTTP 请求进来后，先在这里认证、校验、收紧，再交给框架的 JSON-RPC 处理链。
@@ -80,7 +80,7 @@ public class A2aGateway {
         this.server = server;
         this.runner = runner;
         this.publishedCard = publishedCard;
-        this.tokenDigest = StringUtils.hasText(token) ? sha256(token) : null;
+        this.tokenDigest = StrUtil.isNotBlank(token) ? sha256(token) : null;
         this.maxBodyBytes = maxBodyBytes;
     }
 
@@ -209,21 +209,21 @@ public class A2aGateway {
         String userId = textOrNull(metadata, "userId");
         String sessionId = textOrNull(metadata, "sessionId");
         String contextId = textOrNull(message, "contextId");
-        if (!StringUtils.hasText(sessionId)) {
+        if (!StrUtil.isNotBlank(sessionId)) {
             sessionId = contextId;
         }
-        if (StringUtils.hasText(userId) && !SafeId.Validator.isSafe(userId)) {
+        if (StrUtil.isNotBlank(userId) && !SafeId.Validator.isSafe(userId)) {
             throw new IllegalArgumentException("userId 格式不合法：只能包含字母、数字、下划线、点和短横线，长度 1 到 64，且不能全是点");
         }
-        if (StringUtils.hasText(sessionId) && !SafeId.Validator.isSafe(sessionId)) {
+        if (StrUtil.isNotBlank(sessionId) && !SafeId.Validator.isSafe(sessionId)) {
             throw new IllegalArgumentException("sessionId（或 contextId）格式不合法：只能包含字母、数字、下划线、点和短横线，长度 1 到 64，且不能全是点");
         }
-        if (!StringUtils.hasText(sessionId)) {
+        if (!StrUtil.isNotBlank(sessionId)) {
             sessionId = UUID.randomUUID().toString();
         }
         metadata.put("sessionId", sessionId);
         message.put("contextId", sessionId);
-        if (StringUtils.hasText(userId)) {
+        if (StrUtil.isNotBlank(userId)) {
             metadata.put("userId", userId);
         } else {
             metadata.remove("userId");
@@ -236,7 +236,7 @@ public class A2aGateway {
     }
 
     private static boolean hasValue(JsonNode node) {
-        return node != null && !node.isNull() && StringUtils.hasText(node.asText());
+        return node != null && !node.isNull() && StrUtil.isNotBlank(node.asText());
     }
 
     private static String textOrNull(JsonNode parent, String field) {

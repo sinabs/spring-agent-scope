@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import cn.hutool.core.util.StrUtil;
 import com.yoke.a2a.A2aGateway;
 import com.yoke.a2a.runner.YokeAgentRunner;
 import io.a2a.spec.AgentCapabilities;
@@ -24,7 +25,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
-import org.springframework.util.StringUtils;
 
 /**
  * A2A 服务端装配，{@code yoke.a2a.server.enabled=true} 才生效，默认整个类都不存在。
@@ -48,8 +48,8 @@ public class A2aServerConfiguration {
     @Bean
     public YokeAgentRunner yokeAgentRunner(HarnessAgentFactory factory, AgentscopeProperties agentscope, YokeProperties yoke) {
         YokeProperties.A2a.Card card = yoke.a2a().server().card();
-        String name = StringUtils.hasText(card.name()) ? card.name() : agentscope.getAgent().getName();
-        String description = StringUtils.hasText(card.description()) ? card.description()
+        String name = StrUtil.isNotBlank(card.name()) ? card.name() : agentscope.getAgent().getName();
+        String description = StrUtil.isNotBlank(card.description()) ? card.description()
                 : "Yoke：基于 AgentScope 的对话 Agent，通过 A2A 协议提供同步问答";
         return new YokeAgentRunner(factory, name, description, yoke.a2a().server().timeout());
     }
@@ -123,12 +123,12 @@ public class A2aServerConfiguration {
 
     private static AgentSkill skill(YokeProperties.A2a.Skill skill) {
         return new AgentSkill(skill.id(), skill.name(),
-                StringUtils.hasText(skill.description()) ? skill.description() : skill.name(),
+                StrUtil.isNotBlank(skill.description()) ? skill.description() : skill.name(),
                 skill.tags(), List.of(), null, null, null);
     }
 
     private static String baseUrl(YokeProperties.A2a.Server server, Environment env) {
-        if (StringUtils.hasText(server.publicUrl())) {
+        if (StrUtil.isNotBlank(server.publicUrl())) {
             return server.publicUrl();
         }
         return "http://localhost:" + env.getProperty("server.port", "8080");

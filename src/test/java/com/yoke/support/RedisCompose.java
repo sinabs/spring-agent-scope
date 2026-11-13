@@ -3,6 +3,7 @@ package com.yoke.support;
 import java.io.File;
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.util.Objects;
 import java.util.Set;
 
 import redis.clients.jedis.RedisClient;
@@ -38,7 +39,7 @@ public final class RedisCompose {
 
     /** 共享 Redis 的连接串，形如 {@code redis://127.0.0.1:54321}。 */
     public static synchronized String uri() {
-        if (uri == null) {
+        if (Objects.isNull(uri)) {
             start();
         }
         return uri;

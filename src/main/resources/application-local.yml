@@ -1,13 +1,20 @@
-# 本地开发环境：没有设置环境变量时密钥为空，应用仍能启动，调用模型时才会报鉴权错误
+# 本地开发环境：接火山方舟（OpenAI 兼容协议），启动前只需设置环境变量 ARK_API_KEY
+# 没有设置时密钥为空，应用仍能启动，调用模型时才会报鉴权错误
 agentscope:
   openai:
-    api-key: ${OPENAI_API_KEY:}
+    api-key: ${ARK_API_KEY:}
+    base-url: https://ark.cn-beijing.volces.com/api/v3
+    model-name: deepseek-v4-1-flash-260910
 
 yoke:
   knowledge:
     embedding:
-      # 没有设置环境变量时为空，检索只用关键词
-      api-key: ${YOKE_EMBEDDING_API_KEY:}
+      # 火山方舟的多模态向量模型，和上面的对话模型共用同一个 ARK_API_KEY；没有设置环境变量时密钥为空，检索只用关键词
+      protocol: ark-multimodal
+      model-name: doubao-embedding-vision-251215
+      base-url: https://ark.cn-beijing.volces.com/api/v3
+      api-key: ${ARK_API_KEY:}
+      dimensions: 2048
   redis:
     # 对应 docker-compose.yml 里的 Redis，本地研发先 docker compose up -d
     uri: ${YOKE_REDIS_URI:redis://127.0.0.1:6379}

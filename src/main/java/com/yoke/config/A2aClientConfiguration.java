@@ -1,5 +1,6 @@
 package com.yoke.config;
 
+import cn.hutool.core.util.StrUtil;
 import com.alibaba.nacos.api.ai.AiService;
 import com.yoke.a2a.NoRedirectCardResolver;
 import com.yoke.a2a.RemoteAgentClient;
@@ -10,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.util.StringUtils;
 
 /**
  * 远端 A2A Agent 的客户端装配，配置了 {@code yoke.a2a.remote.url} 或 {@code yoke.a2a.remote.agent-name} 才生效。
@@ -36,7 +36,7 @@ public class A2aClientConfiguration {
         YokeProperties.A2a.Remote remote = yoke.a2a().remote();
         CardSource source = cardSource(yoke);
         if (source == CardSource.NACOS) {
-            if (StringUtils.hasText(remote.url())) {
+            if (StrUtil.isNotBlank(remote.url())) {
                 log.warn("同时配置了 yoke.a2a.remote.url 和 agent-name，且 Nacos 已开启：使用 Nacos 发现，忽略 url");
             }
             AiService aiService = nacos.getObject();
@@ -58,7 +58,7 @@ public class A2aClientConfiguration {
     /** 选择规则，单独成方法便于直接测试。配置自相矛盾时抛出带说明的异常。 */
     public static CardSource cardSource(YokeProperties yoke) {
         YokeProperties.A2a.Remote remote = yoke.a2a().remote();
-        boolean byName = StringUtils.hasText(remote.agentName());
+        boolean byName = StrUtil.isNotBlank(remote.agentName());
         if (byName && yoke.nacos().a2a().enabled()) {
             return CardSource.NACOS;
         }

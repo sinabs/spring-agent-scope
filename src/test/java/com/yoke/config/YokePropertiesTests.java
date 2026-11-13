@@ -92,7 +92,7 @@ class YokePropertiesTests {
 
         assertThat(config.getTriggerMessages()).isEqualTo(30);
         assertThat(config.getKeepMessages()).isEqualTo(10);
-        // 0 在 2.0.4 里是「按上下文窗口动态计算」，不是关闭；用最大值让 token 阈值实际上不会先触发
+        // AgentScope 中 0 表示「按上下文窗口动态计算」，不是关闭；用最大值让 token 阈值实际上不会先触发
         assertThat(config.getTriggerTokens()).isEqualTo(Integer.MAX_VALUE);
         // 0 才改用 keepMessages，默认 -1 是动态 token
         assertThat(config.getKeepTokens()).isZero();
@@ -107,6 +107,7 @@ class YokePropertiesTests {
         assertThat(properties.mcp().servers()).isEmpty();
         assertThat(properties.knowledge().embedding().enabled()).isFalse();
         assertThat(properties.knowledge().embedding().baseUrl()).isEqualTo("https://api.openai.com/v1");
+        assertThat(properties.knowledge().embedding().protocol()).isEqualTo(YokeProperties.Knowledge.Embedding.Protocol.OPENAI);
     }
 
     @Test
@@ -124,7 +125,7 @@ class YokePropertiesTests {
         List<YokeProperties.McpServer> servers = bind(properties).mcp().servers();
 
         assertThat(servers).extracting(YokeProperties.McpServer::name).containsExactly("docs", "legacy");
-        assertThat(servers.get(0).transport()).isEqualTo("streamable-http");
+        assertThat(servers.getFirst().transport()).isEqualTo("streamable-http");
         assertThat(servers.get(0).timeout()).isEqualTo(java.time.Duration.ofSeconds(30));
         assertThat(servers.get(0).headers()).containsEntry("Authorization", "Bearer t");
         assertThat(servers.get(1).timeout()).isEqualTo(java.time.Duration.ofSeconds(5));
@@ -183,11 +184,13 @@ class YokePropertiesTests {
     @Test
     void 向量化配置的toString不泄漏密钥() {
         YokeProperties.Knowledge.Embedding embedding = new YokeProperties.Knowledge.Embedding(
-                "text-embedding-3-small", "https://api.openai.com/v1", "sk-very-secret", 512);
+                "text-embedding-3-small", "https://api.openai.com/v1", "sk-very-secret", 512,
+                YokeProperties.Knowledge.Embedding.Protocol.OPENAI);
 
         assertThat(embedding.toString()).contains("text-embedding-3-small").doesNotContain("sk-very-secret");
         assertThat(embedding.enabled()).isTrue();
-        assertThat(new YokeProperties.Knowledge.Embedding("m", "u", " ", null).enabled()).isFalse();
-        assertThat(new YokeProperties.Knowledge.Embedding(null, "u", "k", null).enabled()).isFalse();
+        assertThat(embedding.toString()).contains("protocol=OPENAI");
+        assertThat(new YokeProperties.Knowledge.Embedding("m", "u", " ", null, null).enabled()).isFalse();
+        assertThat(new YokeProperties.Knowledge.Embedding(null, "u", "k", null, null).enabled()).isFalse();
     }
 }

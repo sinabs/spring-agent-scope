@@ -3,6 +3,7 @@ package com.yoke.nacos;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 
+import cn.hutool.core.util.StrUtil;
 import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.exception.NacosException;
 import io.agentscope.core.agent.Agent;
@@ -12,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import org.springframework.util.StringUtils;
 
 /**
  * Prompt 热更新：每轮组装系统提示词时，直接向 Nacos 拉最新的 Prompt，追加到内置提示词之后。
@@ -90,7 +90,7 @@ public class NacosPromptMiddleware implements MiddlewareBase {
 
     /** 把最新的提示词追加到当前提示词之后；空白或已包含时原样返回。 */
     static String merge(String current, String latest) {
-        if (!StringUtils.hasText(latest)) {
+        if (!StrUtil.isNotBlank(latest)) {
             return current;
         }
         String addition = latest.strip();

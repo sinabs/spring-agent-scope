@@ -22,7 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 守住「所有请求共用同一个 Toolkit 模板」这个前提：它成立靠的是 2.0.4 的 HarnessAgent.Builder.build() 会先拷贝 Toolkit。
+ * 守住「所有请求共用同一个 Toolkit 模板」这个前提：它成立靠的是 AgentScope 的 HarnessAgent.Builder.build() 会先拷贝 Toolkit。
  * 将来框架升级后如果不再拷贝，Harness 的内置工具会写进模板，这里会失败。
  */
 class SharedToolkitTests {
@@ -44,7 +44,7 @@ class SharedToolkitTests {
     void 连续多次请求之后模板里仍然只有Yoke自己的工具(@TempDir Path workspace) {
         Toolkit template = template();
         Set<String> before = new TreeSet<>(template.getToolNames());
-        ScriptedModel model = new ScriptedModel(call -> ScriptedModel.text("ok"));
+        ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("ok"));
         HarnessAgentFactory factory = TestAgents.factory(model, workspace, template);
 
         for (int i = 0; i < 3; i++) {
@@ -63,7 +63,7 @@ class SharedToolkitTests {
 
     @Test
     void 并发地用同一个模板构建Agent_每个Agent看到的工具清单都完整一致(@TempDir Path workspace) throws Exception {
-        ScriptedModel model = new ScriptedModel(call -> ScriptedModel.text("ok"));
+        ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("ok"));
         HarnessAgentFactory factory = TestAgents.factory(model, workspace, template());
         int workers = 16;
 

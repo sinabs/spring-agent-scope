@@ -9,10 +9,11 @@ import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
+import cn.hutool.core.util.StrUtil;
 import com.yoke.codec.MessageCodec;
 import com.yoke.config.HarnessAgentFactory;
 import com.yoke.model.SafeId;
-import com.yoke.tool.UserContext;
+import com.yoke.model.UserContext;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.agent.RuntimeContext;
@@ -24,7 +25,6 @@ import io.agentscope.harness.agent.HarnessAgent;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 
-import org.springframework.util.StringUtils;
 
 /**
  * 把「每请求新建 HarnessAgent」接成 A2A 服务端的 {@link AgentRunner}。
@@ -138,7 +138,7 @@ public class YokeAgentRunner implements AgentRunner {
     }
 
     private static String resolveId(String value, String fallback, String field) {
-        if (!StringUtils.hasText(value)) {
+        if (!StrUtil.isNotBlank(value)) {
             return fallback;
         }
         if (!SafeId.Validator.isSafe(value)) {
@@ -150,9 +150,9 @@ public class YokeAgentRunner implements AgentRunner {
     private static String textOf(List<Msg> messages) {
         String text = messages.stream()
                 .map(Msg::getTextContent)
-                .filter(StringUtils::hasText)
+                .filter(StrUtil::isNotBlank)
                 .collect(Collectors.joining("\n"));
-        if (!StringUtils.hasText(text)) {
+        if (!StrUtil.isNotBlank(text)) {
             throw new IllegalArgumentException("消息里没有文本内容");
         }
         return text;

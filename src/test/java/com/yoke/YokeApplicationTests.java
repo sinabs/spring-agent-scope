@@ -38,7 +38,7 @@ class YokeApplicationTests extends RedisIntegrationTest {
         HarnessAgentFactory factory = context.getBean(HarnessAgentFactory.class);
         LoggingMiddleware logging = context.getBean(LoggingMiddleware.class);
 
-        int sizes[] = new int[3];
+        int[] sizes = new int[3];
         for (int i = 0; i < sizes.length; i++) {
             try (HarnessAgent agent = factory.create()) {
                 var middlewares = agent.getDelegate().getMiddlewares();
@@ -47,7 +47,7 @@ class YokeApplicationTests extends RedisIntegrationTest {
             }
         }
 
-        // 如果像 ReActAgent 那样共享同一个 HarnessAgent.Builder，2.0.4 每次 build 都会多追加一批中间件
+        // 如果像 ReActAgent 那样共享同一个 HarnessAgent.Builder，AgentScope 的每次 build 都会多追加一批中间件
         assertThat(sizes[1]).isEqualTo(sizes[0]);
         assertThat(sizes[2]).isEqualTo(sizes[0]);
     }

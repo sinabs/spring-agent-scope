@@ -1,4 +1,4 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.retrieve;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -7,8 +7,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
+import cn.hutool.core.util.StrUtil;
+import com.yoke.model.Passage;
+import com.yoke.knowledge.RetrievePort;
 import reactor.core.publisher.Mono;
 
 /**
@@ -26,19 +30,24 @@ public final class KeywordRetrievePort implements RetrievePort {
 
     private final List<Passage> passages;
     private final List<Map<String, Integer>> termFrequencies;
+    /** 每个片段的词数，与 termFrequencies 一一对应；构造时就定了，不在每次查询时重新累加。 */
+    private final int[] lengths;
     private final Map<String, Integer> documentFrequency = new HashMap<>();
     private final double averageLength;
 
     public KeywordRetrievePort(List<Passage> passages) {
         this.passages = List.copyOf(passages);
         this.termFrequencies = new ArrayList<>();
+        this.lengths = new int[this.passages.size()];
         long totalLength = 0;
-        for (Passage passage : this.passages) {
+        for (int i = 0; i < this.passages.size(); i++) {
+            Passage passage = this.passages.get(i);
             Map<String, Integer> frequencies = new HashMap<>();
             List<String> tokens = tokenize(passage.source() + " " + passage.text());
             tokens.forEach(token -> frequencies.merge(token, 1, Integer::sum));
             frequencies.keySet().forEach(token -> documentFrequency.merge(token, 1, Integer::sum));
             termFrequencies.add(frequencies);
+            lengths[i] = tokens.size();
             totalLength += tokens.size();
         }
         this.averageLength = this.passages.isEmpty() ? 1 : Math.max(1, (double) totalLength / this.passages.size());
@@ -50,7 +59,7 @@ public final class KeywordRetrievePort implements RetrievePort {
     }
 
     private List<Passage> search(String query, int topK) {
-        if (query == null || query.isBlank() || topK <= 0 || passages.isEmpty()) {
+        if (StrUtil.isBlank(query) || topK <= 0 || passages.isEmpty()) {
             return List.of();
         }
         Set<String> queryTerms = new HashSet<>(tokenize(query));
@@ -58,7 +67,7 @@ public final class KeywordRetrievePort implements RetrievePort {
         }
         List<Scored> scored = new ArrayList<>();
         for (int i = 0; i < passages.size(); i++) {
-            double score = score(queryTerms, termFrequencies.get(i));
+            double score = score(queryTerms, termFrequencies.get(i), lengths[i]);
             if (score > 0) {
                 scored.add(new Scored(passages.get(i), score));
             }
@@ -70,12 +79,11 @@ public final class KeywordRetrievePort implements RetrievePort {
                 .toList();
     }
 
-    private double score(Set<String> queryTerms, Map<String, Integer> frequencies) {
-        double length = frequencies.values().stream().mapToInt(Integer::intValue).sum();
+    private double score(Set<String> queryTerms, Map<String, Integer> frequencies, int length) {
         double score = 0;
         for (String term : queryTerms) {
             Integer tf = frequencies.get(term);
-            if (tf == null) {
+            if (Objects.isNull(tf)) {
                 continue;
             }
             int df = documentFrequency.getOrDefault(term, 0);

@@ -28,9 +28,24 @@ class ArchitectureTests {
             "io.agentscope.core.agent.RuntimeContext",
             "io.agentscope.core.agent.RuntimeContext$Builder");
 
+    /** 配置类装配适配器配置所必需的 AG-UI 类型，其余 AG-UI 类型一律不行。 */
+    private static final Set<String> CONFIG_AGUI_ALLOWED = Set.of(
+            "io.agentscope.core.agui.adapter.AguiAdapterConfig",
+            "io.agentscope.core.agui.adapter.AguiAdapterConfig$Builder");
+
+    private static final DescribedPredicate<JavaClass> AGUI_OUTSIDE_CONFIG_ALLOWED_LIST = DescribedPredicate
+            .and(resideInAPackage("io.agentscope.core.agui.."),
+                    DescribedPredicate.not(new DescribedPredicate<>(
+                            "the config allowed types " + CONFIG_AGUI_ALLOWED) {
+                        @Override
+                        public boolean test(JavaClass input) {
+                            return CONFIG_AGUI_ALLOWED.contains(input.getName());
+                        }
+                    }));
+
     private static final DescribedPredicate<JavaClass> FRAMEWORK_OUTSIDE_ALLOWED_LIST = DescribedPredicate
             .and(resideInAPackage("io.agentscope.."),
-                    DescribedPredicate.not(new DescribedPredicate<JavaClass>(
+                    DescribedPredicate.not(new DescribedPredicate<>(
                             "the controller allowed types " + CONTROLLER_ALLOWED) {
                         @Override
                         public boolean test(JavaClass input) {
@@ -61,7 +76,7 @@ class ArchitectureTests {
             .should().dependOnClassesThat().resideInAnyPackage("io.agentscope.core.message..", "io.agentscope.core.event..");
 
     /**
-     * 检索端口是应用层自己的接口：不依赖 AgentScope（2.0.4 里框架的 rag 包已标记为将移除），
+     * 检索端口是应用层自己的接口：不依赖 AgentScope（AgentScope 里框架的 rag 包已标记为将移除），
      * 以后换向量库、换检索算法都不影响 Agent 和工具。向量化客户端、关键词检索、融合与降级都在这个包里。
      */
     @ArchTest
@@ -139,4 +154,14 @@ class ArchitectureTests {
     static final ArchRule A2A和Nacos包不反向依赖接口层 = noClasses()
             .that().resideInAnyPackage("com.yoke.a2a..", "com.yoke.nacos..")
             .should().dependOnClassesThat().resideInAnyPackage("com.yoke.controller..", "com.yoke.api..");
+
+    @ArchTest
+    static final ArchRule AGUI协议类型只能出现在codec和config里 = noClasses()
+            .that().resideOutsideOfPackages("com.yoke.codec..", "com.yoke.config..")
+            .should().dependOnClassesThat().resideInAPackage("io.agentscope.core.agui..");
+
+    @ArchTest
+    static final ArchRule config只能依赖适配器配置这几个AGUI类型 = noClasses()
+            .that().resideInAPackage("com.yoke.config..")
+            .should().dependOnClassesThat(AGUI_OUTSIDE_CONFIG_ALLOWED_LIST);
 }

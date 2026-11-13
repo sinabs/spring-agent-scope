@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 验证各环境的配置文件按预期加载。
  *
- * <p>local 和 prod 的密钥来自环境变量 OPENAI_API_KEY，这里用同名属性代替，避免依赖本机环境。
+ * <p>local 的密钥来自环境变量 ARK_API_KEY，prod 的来自 OPENAI_API_KEY，这里用同名属性代替，避免依赖本机环境。
  * 启动完整上下文需要 Redis，连接串由共享的 Testcontainers 容器注入；Redis 连接串在各环境文件里的写法
  * 会被注入的值覆盖，所以单独直接读文件来断言。
  */
@@ -49,14 +49,16 @@ class ProfilesTests extends RedisIntegrationTest {
 
     @Test
     void 向量化密钥在三个环境里的写法一致_都不会让缺失变成启动失败() throws IOException {
-        assertThat(yamlValue("application-local.yml", "yoke.knowledge.embedding.api-key")).isEqualTo("${YOKE_EMBEDDING_API_KEY:}");
+        // local 接火山方舟，向量化和对话模型共用 ARK_API_KEY
+        assertThat(yamlValue("application-local.yml", "yoke.knowledge.embedding.api-key")).isEqualTo("${ARK_API_KEY:}");
+        assertThat(yamlValue("application-local.yml", "yoke.knowledge.embedding.protocol")).isEqualTo("ark-multimodal");
         assertThat(yamlValue("application-prod.yml", "yoke.knowledge.embedding.api-key")).isEqualTo("${YOKE_EMBEDDING_API_KEY:}");
         // test 环境故意留空，保证测试不访问向量化服务
         assertThat(yamlValue("application-test.yml", "yoke.knowledge.embedding.api-key")).isIn("", null);
     }
 
     @Nested
-    @SpringBootTest(properties = "OPENAI_API_KEY=sk-test")
+    @SpringBootTest(properties = "ARK_API_KEY=sk-test")
     class 默认环境 {
 
         @Autowired
@@ -66,6 +68,13 @@ class ProfilesTests extends RedisIntegrationTest {
         void 没有指定环境时激活local() {
             assertThat(environment.getDefaultProfiles()).contains("local");
             assertThat(environment.getProperty("logging.level.com.yoke")).isEqualTo("debug");
+        }
+
+        @Test
+        void local环境接火山方舟且密钥来自ARK_API_KEY() {
+            assertThat(environment.getProperty("agentscope.openai.base-url")).isEqualTo("https://ark.cn-beijing.volces.com/api/v3");
+            assertThat(environment.getProperty("agentscope.openai.model-name")).isEqualTo("deepseek-v4-1-flash-260910");
+            assertThat(environment.getProperty("agentscope.openai.api-key")).isEqualTo("sk-test");
         }
     }
 

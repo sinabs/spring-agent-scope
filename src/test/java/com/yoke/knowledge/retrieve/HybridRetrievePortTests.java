@@ -1,8 +1,10 @@
-package com.yoke.knowledge;
+package com.yoke.knowledge.retrieve;
 
+import com.yoke.knowledge.RetrievePort;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.yoke.model.Passage;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
@@ -16,11 +18,11 @@ class HybridRetrievePortTests {
     }
 
     private static RetrievePort returning(Passage... passages) {
-        return (query, topK) -> Mono.just(List.of(passages));
+        return (_, _) -> Mono.just(List.of(passages));
     }
 
     private static RetrievePort failing() {
-        return (query, topK) -> Mono.error(new IllegalStateException("向量化服务超时"));
+        return (_, _) -> Mono.error(new IllegalStateException("向量化服务超时"));
     }
 
     @Test
@@ -32,6 +34,21 @@ class HybridRetrievePortTests {
 
         // B: 1/62 + 1/61；A: 1/61 + 1/63；C: 1/63；D: 1/62
         assertThat(result).extracting(Passage::id).containsExactly("B", "A", "D", "C");
+    }
+
+    @Test
+    void 两路检索并行执行_总耗时取决于最慢的一路而不是两路之和() {
+        RetrievePort slow = (_, _) -> Mono.delay(java.time.Duration.ofMillis(500)).thenReturn(List.of(p("A")))
+                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
+        RetrievePort alsoSlow = (_, _) -> Mono.delay(java.time.Duration.ofMillis(500)).thenReturn(List.of(p("B")));
+        RetrievePort hybrid = new HybridRetrievePort(List.of(slow, alsoSlow));
+
+        long start = System.nanoTime();
+        List<Passage> result = hybrid.retrieve("q", 2).block();
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+
+        assertThat(result).extracting(Passage::id).containsExactlyInAnyOrder("A", "B");
+        assertThat(elapsedMillis).isLessThan(900);
     }
 
     @Test
@@ -94,7 +111,7 @@ class HybridRetrievePortTests {
     @Test
     void 失败的一路不会拖累成功的一路被调用() {
         AtomicInteger calls = new AtomicInteger();
-        RetrievePort counting = (query, topK) -> {
+        RetrievePort counting = (_, _) -> {
             calls.incrementAndGet();
             return Mono.just(List.of(p("K")));
         };
@@ -107,7 +124,7 @@ class HybridRetrievePortTests {
     @Test
     void 每一路取的候选比最终topK更宽() {
         AtomicInteger requested = new AtomicInteger();
-        RetrievePort spy = (query, topK) -> {
+        RetrievePort spy = (_, topK) -> {
             requested.set(topK);
             return Mono.just(List.of());
         };
