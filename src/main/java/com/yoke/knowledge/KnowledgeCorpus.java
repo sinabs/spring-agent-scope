@@ -1,0 +1,154 @@
+package com.yoke.knowledge;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
+
+import com.yoke.model.Passage;
+import lombok.NoArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+
+/**
+ * 把 {@code classpath*:knowledge/*.md} 切成片段。
+ *
+ * <p>切法：文档第一个一级标题（{@code # }）当作文档标题，之后每个二级标题（{@code ## }）起一个片段，
+ * 代码围栏（{@code ```}、{@code ~~~}）里以 {@code #} 开头的行不算标题，
+ * 片段正文超过 {@link #MAX_CHUNK_LENGTH} 个字符时按段落再切。每个片段正文前面带上「文档标题 / 小节标题」，
+ * 这样单看一个片段也知道它在讲什么。片段 id 由文档名和正文摘要组成，见 {@link #passage}。
+ */
+@NoArgsConstructor(access = lombok.AccessLevel.PRIVATE)
+public final class KnowledgeCorpus {
+
+    static final int MAX_CHUNK_LENGTH = 500;
+
+    private static final int DIGEST_BYTES = 4;
+
+    /** 读取 classpath 下的全部知识文档并切片；没有文档时返回空列表。 */
+    public static List<Passage> loadFromClasspath(String pattern) {
+        try {
+            return load(Arrays.asList(new PathMatchingResourcePatternResolver().getResources(pattern)));
+        } catch (IOException e) {
+            throw new UncheckedIOException("扫描知识文档失败：" + pattern, e);
+        }
+    }
+
+    /**
+     * 片段 id 以文件名开头，{@code classpath*:} 又会把每个 classpath 根（依赖 jar、测试资源）里的同名文件都找出来，
+     * 两篇同名文档的片段会被当成同一个来源，融合检索时还会互相覆盖，所以文件名重复直接失败，而不是悄悄丢掉一篇。
+     */
+    static List<Passage> load(List<Resource> resources) {
+        List<String> duplicates = resources.stream()
+                .collect(Collectors.groupingBy(resource -> Optional.ofNullable(resource.getFilename()).orElse(""),
+                        TreeMap::new, Collectors.counting()))
+                .entrySet().stream()
+                .filter(entry -> entry.getValue() > 1)
+                .map(Map.Entry::getKey)
+                .toList();
+        if (!duplicates.isEmpty()) {
+            throw new IllegalStateException("知识文档文件名重复，片段 id 会冲突：" + duplicates);
+        }
+        List<Passage> passages = new ArrayList<>();
+        resources.stream()
+                .sorted(Comparator.comparing(Resource::getFilename, Comparator.nullsLast(Comparator.naturalOrder())))
+                .forEach(resource -> {
+                    try {
+                        String markdown = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                        passages.addAll(split(resource.getFilename(), markdown));
+                    } catch (IOException e) {
+                        throw new UncheckedIOException("读取知识文档失败：" + resource.getFilename(), e);
+                    }
+                });
+        return passages;
+    }
+
+    /** 把一篇 Markdown 切成片段；{@code fileName} 只在文档没有一级标题时充当标题。 */
+    static List<Passage> split(String fileName, String markdown) {
+        String title = Optional.ofNullable(fileName).orElse("未命名文档");
+        String section = null;
+        StringBuilder body = new StringBuilder();
+        List<Passage> passages = new ArrayList<>();
+        String docId = Optional.ofNullable(fileName).orElse("doc");
+        boolean inFence = false;
+
+        for (String line : markdown.split("\\R")) {
+            // 代码块里的「# 先切 JDK」是 shell 注释，不是标题：围栏内的行原样进正文
+            if (isFence(line)) {
+                inFence = !inFence;
+                body.append(line).append('\n');
+            } else if (inFence) {
+                body.append(line).append('\n');
+            } else if (line.startsWith("# ")) {
+                title = line.substring(2).trim();
+            } else if (line.startsWith("## ")) {
+                flush(passages, docId, title, section, body);
+                section = line.substring(3).trim();
+            } else {
+                body.append(line).append('\n');
+            }
+        }
+        flush(passages, docId, title, section, body);
+        return passages;
+    }
+
+    /** Markdown 的代码围栏：行首最多三个空格后跟 ``` 或 ~~~。 */
+    private static boolean isFence(String line) {
+        String trimmed = line.stripLeading();
+        return line.length() - trimmed.length() <= 3 && (trimmed.startsWith("```") || trimmed.startsWith("~~~"));
+    }
+
+    private static void flush(List<Passage> passages, String docId, String title, String section, StringBuilder body) {
+        String text = body.toString().strip();
+        body.setLength(0);
+        if (text.isEmpty()) {
+            return;
+        }
+        String heading = Optional.ofNullable(section).map(name -> title + " / " + name).orElse(title);
+        StringBuilder chunk = new StringBuilder();
+        for (String paragraph : text.split("\\n\\s*\\n")) {
+            if (!chunk.isEmpty() && chunk.length() + paragraph.length() > MAX_CHUNK_LENGTH) {
+                passages.add(chunkPassage(docId, title, heading, chunk));
+                chunk.setLength(0);
+            }
+            chunk.append(paragraph.strip()).append("\n\n");
+        }
+        if (!chunk.isEmpty()) {
+            passages.add(chunkPassage(docId, title, heading, chunk));
+        }
+    }
+
+    /** 片段正文前面带上「文档标题 / 小节标题」。 */
+    private static Passage chunkPassage(String docId, String title, String heading, StringBuilder chunk) {
+        return passage(docId, title, heading + "\n" + chunk.toString().strip());
+    }
+
+    /**
+     * 片段 id 是「文档名#正文摘要」，不用片段在文档里的位置：id 会作为引用编号写进 Redis 里的对话历史，
+     * 跨重启、跨部署都还在。按位置编号的话，文档前面插一节，后面所有片段的 id 就都换成了别的正文；
+     * 按内容算，同一个 id 一定是同一段正文，正文改了 id 也跟着变，旧引用只会找不到，不会指错。
+     */
+    private static Passage passage(String docId, String title, String text) {
+        return new Passage(docId + "#" + digest(text), title, text);
+    }
+
+    /** SHA-256 的前 4 个字节（8 位十六进制）：知识库只有几十个片段，足够区分，又不会让引用编号太长。 */
+    private static String digest(String text) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash, 0, DIGEST_BYTES);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JDK 缺少 SHA-256", e);
+        }
+    }
+}

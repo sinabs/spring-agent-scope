@@ -5,8 +5,10 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.yoke.mcp.McpConnections;
 import com.yoke.support.RedisIntegrationTest;
 import com.yoke.support.StubModelConfiguration;
+import com.yoke.tool.SharedToolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +35,9 @@ class HarnessAgentToolsTests extends RedisIntegrationTest {
     @Autowired
     HarnessAgentFactory agentFactory;
 
+    @Autowired
+    SharedToolkit sharedToolkit;
+
     /** 不显式传 toolsConfig 时，这份 tools.json 会把 get_weather 拒掉。 */
     private static Path workspaceWithToolsJson() {
         try {
@@ -50,11 +55,14 @@ class HarnessAgentToolsTests extends RedisIntegrationTest {
     }
 
     @Test
-    void 模型只能看到天气和必要的框架工具() {
+    void 模型只能看到Yoke自己的工具和必要的框架工具() {
         // 精确集合：读类的记忆和会话工具能跨用户读数据，联网工具能把请求引到外部，多出任何一个都要变红
         try (HarnessAgent agent = agentFactory.create()) {
             assertThat(agent.getToolkit().getToolNames())
-                    .containsExactlyInAnyOrder("get_weather", "memory_save", "load_skill_through_path", "wait_async_results");
+                    .containsExactlyInAnyOrder(
+                            "get_weather", "get_current_time", "calculate", "list_my_notes", "retrieve",
+                            "memory_save", "load_skill_through_path", "wait_async_results",
+                            "agent_spawn", "agent_send", "agent_list", "task_output", "task_cancel", "task_list");
         }
     }
 
@@ -62,6 +70,17 @@ class HarnessAgentToolsTests extends RedisIntegrationTest {
     void 工作区里的toolsJson不生效() {
         try (HarnessAgent agent = agentFactory.create()) {
             assertThat(agent.getToolkit().getToolNames()).contains("get_weather");
+        }
+    }
+
+    @Test
+    void Harness在build时加的内置工具都登记在MCP重名检查的清单里() {
+        // MCP 重名检查在启动时只看得到模板，模板之外的工具靠 HARNESS_TOOL_NAMES 兜住；框架新增了内置工具，这里会变红
+        try (HarnessAgent agent = agentFactory.create()) {
+            assertThat(agent.getToolkit().getToolNames())
+                    .filteredOn(name -> !sharedToolkit.toolkit().getToolNames().contains(name))
+                    .isNotEmpty()
+                    .allMatch(McpConnections.HARNESS_TOOL_NAMES::contains);
         }
     }
 }

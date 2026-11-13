@@ -29,7 +29,7 @@ Yoke 是友客AI的开源项目。大家一起读 AgentScope Java V2 和 Spring 
 - 一个接口完成多轮对话：`POST /api/chat`；另有 `POST /api/chat/stream`，按 AG-UI 协议通过 SSE 边推理边推送。
 - 内置 `get_weather` 工具，通过开源的 [Open-Meteo](https://open-meteo.com) 查当前天气，免密钥（免费版仅限非商业使用）。
 - 每次请求新建一个临时 `HarnessAgent`，用完即关闭。对话历史存在 Redis 里，重启不丢，多个副本共享，按 `(userId, sessionId)` 隔离，对话过长时自动压缩。
-- 除 `get_weather` 外，Agent 没有其他工具：不开放文件、命令和联网，子 Agent 整体关闭。日志中间件为每次调用记录耗时轨迹。
+- 工具、知识库与子 Agent：计算器、时钟、按用户隔离的笔记工具，基于内置知识库的 `retrieve` 工具（返回带稳定片段编号的引用，形如 `[文档名.md#片段编号]`），通过 HTTP 接入外部 MCP 服务，以及两个子 Agent（一个在代码里声明，一个由工作区 Markdown 文件声明）。Agent 仍不开放文件、命令和联网工具，日志中间件为每次调用记录耗时轨迹。
 - 通过 AgentScope 官方 starter 接入各种模型：OpenAI 兼容协议（可对接 DashScope、DeepSeek 等）、Anthropic、Gemini、Ollama，换依赖和配置即可。
 - 有 local / test / prod 多环境配置；生产环境缺少密钥时启动即失败，避免带着空密钥上线。
 - 默认开启虚拟线程，Tomcat 和 Spring 默认线程池都使用虚拟线程。
@@ -141,7 +141,7 @@ data:{"type":"RUN_FINISHED","threadId":"demo","runId":"…"}
 
 配置按环境拆分，没有显式指定环境时默认激活 `local`；部署时用环境变量 `SPRING_PROFILES_ACTIVE=prod` 或命令行参数 `--spring.profiles.active=prod` 切换。
 
-- `application.yml`：各环境通用：模型、Agent、虚拟线程、日志格式、工作区、键前缀和压缩配置
+- `application.yml`：各环境通用：模型、Agent、虚拟线程、日志格式、工作区、键前缀、压缩、知识库向量化配置和（注释形式的）MCP 示例
 - `application-local.yml`：本地开发：火山方舟的 `base-url` 与模型名写在文件里，密钥读环境变量 `ARK_API_KEY`（可为空），Redis 连 `redis://127.0.0.1:6379`（即 `docker-compose.yml` 里的那个），`com.yoke` 日志为 debug
 - `application-test.yml`：自动化测试：假密钥，不会真正调用模型；Redis 地址由测试注入
 - `application-prod.yml`：生产：密钥和 Redis 地址（`YOKE_REDIS_URI`）必须由环境变量提供，缺失则启动失败；优雅停机
@@ -165,8 +165,31 @@ Yoke 自己的配置使用 `yoke.*` 前缀：
 | `yoke.compaction.trigger-messages` | 对话消息达到这个条数就压缩，默认 30 |
 | `yoke.compaction.keep-messages` | 压缩后原样保留的最近条数，默认 10。小于等于 0，或保留条数不小于触发条数时，回落到默认值 |
 | `yoke.workspace` | `HarnessAgent` 的工作区，放本地文件（转存的消息、记忆），默认 `~/.yoke/workspace`；只在本机，副本之间不共享 |
+| `yoke.knowledge.embedding.model-name` / `api-key` / `base-url` / `dimensions` / `protocol` | 可选的向量化服务，用于向量检索。`protocol` 默认 `openai`（OpenAI 兼容的 `/embeddings`，可批量）；火山方舟的多模态向量模型（如 `doubao-embedding-vision-251215`）要写 `ark-multimodal`（`/embeddings/multimodal`，一条文本一次请求，`local` 环境默认就是它，复用 `ARK_API_KEY`）。`model-name` 和 `api-key`（`YOKE_EMBEDDING_API_KEY`）都有值才启用向量检索，否则只用关键词检索；运行中向量化服务出错时自动退回关键词检索 |
+| `yoke.mcp.servers[]` | 外部 MCP 服务，默认一个也不接。每项有 `name`、`transport`（只能是 `sse` 或 `streamable-http`）、`url`、`timeout`（默认 30 秒）和可选的 `headers`。配置 `stdio` 会让应用启动失败；服务连不上同样启动失败 |
 
-Agent 创建时不开放文件、命令和联网工具，并且整体关闭子 Agent：读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，开着子 Agent 就能让模型派生出能抓取任意 URL 的子 Agent。读类的记忆和会话工具（`memory_get`、`memory_search`、`session_history`、`session_list`、`session_search`）也被拒绝：`memory_get` 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，`session_history` 把模型给的 ID 直接拼进路径，开着就能让模型读到别的用户的记忆和会话。剩下的只有 `get_weather`、`memory_save`（只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制）、`load_skill_through_path` 和 `wait_async_results`。工具配置是显式传入的，工作区里的 `tools.json` 不生效。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
+Agent 创建时不开放文件、命令和联网工具。读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，所以联网工具除了主 Agent 的 `disableWebTools()`，还用 `ToolsConfig` 的 deny 名单禁掉，它同时作用于主 Agent、内置的 `general-purpose` 子 Agent 和所有声明的子 Agent。显式传入 `ToolsConfig` 还会让 2.0.4 不再去读工作区里的 `tools.json`（那个文件可以声明 `stdio` MCP 服务，也就是在宿主机上启动进程）。读类的记忆和会话工具（`memory_get`、`memory_search`、`session_history`、`session_list`、`session_search`）也被同一份 deny 名单拒绝：`memory_get` 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，`session_history` 把模型给的 ID 直接拼进路径，开着就能让模型读到别的用户的记忆和会话。模型看到的工具恰好是：Yoke 自己的（`get_weather`、`get_current_time`、`calculate`、`list_my_notes`、`retrieve`），框架的写记忆、技能加载、异步结果、子 Agent 和后台任务类工具（`memory_save` 只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制），再加上所配置的 MCP 服务公布的工具。`ToolPermissionTests` 用精确集合断言这份清单，框架升级新增了工具会让构建失败。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
+
+## 工具、知识库与子 Agent
+
+- **工具**（`com.yoke.tool`）：带 `@Tool` 方法的普通类，启动时一次性注册进共享的 `Toolkit`。`calculate` 用手写的递归下降解析器（不用脚本引擎，输入长度和嵌套深度有上限，除零以文本形式报告）。`list_my_notes` 的 `UserContext` 参数不带 `@ToolParam`：框架按类型从本次请求的 `RuntimeContext` 里注入，模型既看不到也伪造不了用户标识。
+- **检索**：`retrieve` 工具检索 `src/main/resources/knowledge/*.md`，返回带稳定编号（形如 `[文档名.md#片段编号]`，文档名加正文摘要，正文改了编号也跟着变，旧引用不会指到别的内容上；不同 classpath 根里有同名知识文档时启动即失败）和来源的片段，并要求模型原样照抄编号引用；同一轮对话里多次检索编号也不会重复，不像每次从 `[1]` 开始的序号会冲突。它是唯一的检索通道，有意不同时使用框架的 `knowledge()` 自动注入。检索分层放在应用自己的 `RetrievePort` 后面（不含框架类型）：BM25 关键词检索永远可用；配置了向量化服务就再加一路向量检索，两路用 RRF（常数 60）融合，任何一路失败就用另一路。注意开启向量化后，用户的检索问题和知识库语料会发送给 embedding 服务提供方。没有使用框架自带的 `rag-simple`：`core/rag` 包在 2.0.4 里已 `@Deprecated(forRemoval = true)`，而且该模块会拖进 Qdrant、Milvus、Elasticsearch、PostgreSQL、PDFBox、POI、Tika 等一大批依赖。
+- **MCP**：只接受 HTTP 传输。示例：
+
+  ```yaml
+  yoke:
+    mcp:
+      servers:
+        - name: docs
+          transport: streamable-http   # 或 sse
+          url: https://mcp.example.com/mcp
+          timeout: 30s
+          headers:
+            Authorization: Bearer ${MCP_DOCS_TOKEN}
+  ```
+
+  工具以服务端公布的名字出现。2.0.4 里 MCP 工具只有服务端声明了 `readOnlyHint` 才会免确认执行，而 Yoke 的 HTTP 接口没有人工确认通道（否则一轮对话会在工具调用处无声结束、回复为空）。所以只注册声明了只读的工具，其余跳过（工具名记在 INFO 日志里），主 Agent 和子 Agent 都看不到它们。公布的工具与 Yoke 自己的工具或 Harness 内置工具（`memory_save`、`agent_spawn` 等，每次请求建 Agent 时才加进去）重名时，启动失败。
+- **子 Agent**：`summarizer` 在代码里声明（`YokeSubagents`），没有任何工具；`kb-researcher` 由 `src/main/resources/workspace/subagents/kb-researcher.md` 声明，启动时拷贝到 `yoke.workspace/subagents/`，只能用 `retrieve`。2.0.4 对同 id 冲突是静默的：工作区文件会覆盖代码里的声明（`general-purpose.md` 还会替换内置的那个），所以 Yoke 会扫描 `yoke.workspace/subagents/` 里实际存在的全部文件（包括遗留的、手放的，不只是随应用发布的那几个），遇到任何这类重名都直接启动失败。
 
 要换成其他模型，把 `build.gradle` 里的 `agentscope-openai-spring-boot-starter` 换成对应的 starter（dashscope、anthropic、gemini、ollama），并修改 `agentscope.model.provider`。
 
@@ -177,11 +200,14 @@ src/main/java/com/yoke/
 ├── YokeApplication.java        应用入口
 ├── api/                        HTTP 接口契约（ChatApi，路径、校验和文档都在这里）
 ├── codec/                      领域类型与框架类型之间的转换（MessageCodec、AguiStreamCodec、HintEventConverter）
-├── config/                     Agent、Redis 与 AG-UI 适配器配置（HarnessAgentFactory、YokeProperties）
+├── config/                     Agent、Redis、AG-UI 适配器、工具、知识库与子 Agent 配置（HarnessAgentFactory、YokeProperties、YokeSubagents）
 ├── controller/                 接口实现（ChatController）
+├── knowledge/                  检索端口及实现：关键词、向量、RRF 融合（不含框架类型）
+├── mcp/                        到外部 MCP 服务的连接（只支持 HTTP 传输）
 ├── middleware/                 Agent 中间件（LoggingMiddleware）
-└── model/                      请求与响应对象（ChatRequest、ChatResponse）
-src/main/resources/             application.yml 及各环境配置
+├── model/                      请求与响应对象（ChatRequest、ChatResponse）
+└── tool/                       暴露给模型的工具（WeatherTool、ChatTools、RetrieveTool、UserContext）
+src/main/resources/             application.yml、各环境配置、knowledge/*.md 和 workspace/subagents/*.md
 docker-compose.yml              本地 Redis，集成测试也用它
 docs/brand/                     logo
 ```
@@ -193,7 +219,7 @@ docs/brand/                     logo
 
 ## 参与贡献
 
-欢迎提交 Issue 和 Pull Request。提交前请运行 `./gradlew build` 确保全部测试通过；代码注释使用中文。AgentScope 的消息和事件类型不能泄漏到 `codec` 之外（`middleware` 除外，它的钩子签名本身就要用这些类型），`ArchitectureTests` 会检查这一点。
+欢迎提交 Issue 和 Pull Request。提交前请运行 `./gradlew build` 确保全部测试通过；代码注释使用中文。AgentScope 的消息和事件类型不能泄漏到 `codec` 之外（`middleware` 除外，它的钩子签名本身就要用这些类型），`knowledge` 包不能出现任何 AgentScope 类型，`ArchitectureTests` 会检查这些。
 
 ## 许可证
 

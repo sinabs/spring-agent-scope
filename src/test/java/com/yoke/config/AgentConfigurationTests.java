@@ -1,8 +1,11 @@
 package com.yoke.config;
 
-import com.yoke.tool.WeatherTool;
+import java.util.List;
+
+import com.yoke.tool.SharedToolkit;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import org.junit.jupiter.api.Test;
@@ -15,10 +18,10 @@ import org.springframework.context.annotation.Import;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-class HarnessAgentFactoryTests {
+class AgentConfigurationTests {
 
     @Configuration(proxyBeanMethods = false)
-    @Import({WeatherTool.class, HarnessAgentFactory.class})
+    @Import(AgentConfiguration.class)
     static class Base {
 
         @Bean
@@ -39,7 +42,14 @@ class HarnessAgentFactoryTests {
         @Bean
         YokeProperties yokeProperties() {
             return new YokeProperties(new YokeProperties.Redis("redis://127.0.0.1:6379", "yoke:"),
-                    new YokeProperties.Compaction(30, 10), "/tmp/yoke-test");
+                    new YokeProperties.Compaction(30, 10), "/tmp/yoke-test",
+                    new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null, null)),
+                    new YokeProperties.Mcp(List.of()));
+        }
+
+        @Bean
+        SharedToolkit sharedToolkit() {
+            return new SharedToolkit(new Toolkit());
         }
     }
 

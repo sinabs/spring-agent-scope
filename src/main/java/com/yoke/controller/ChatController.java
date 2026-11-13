@@ -11,6 +11,7 @@ import com.yoke.codec.MessageCodec;
 import com.yoke.config.HarnessAgentFactory;
 import com.yoke.model.ChatRequest;
 import com.yoke.model.ChatResponse;
+import com.yoke.model.UserContext;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.HarnessAgent;
 import lombok.RequiredArgsConstructor;
@@ -89,6 +90,8 @@ public class ChatController implements ChatApi {
         return RuntimeContext.builder()
                 .userId(userId)
                 .sessionId(sessionId)
+                // 工具方法里不带 @ToolParam 的 UserContext 参数按类型从这里注入，模型看不到也伪造不了
+                .put(UserContext.class, new UserContext(userId))
                 .build();
     }
 }

@@ -10,7 +10,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RedisConfigurationTests {
 
     private static YokeProperties withUri(String uri) {
-        return new YokeProperties(new YokeProperties.Redis(uri, "yoke:"), new YokeProperties.Compaction(30, 10), "/tmp/yoke");
+        return new YokeProperties(new YokeProperties.Redis(uri, "yoke:"), new YokeProperties.Compaction(30, 10), "/tmp/yoke",
+                new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null, null)),
+                new YokeProperties.Mcp(java.util.List.of()));
     }
 
     private static String allMessages(Throwable error) {
@@ -23,7 +25,7 @@ class RedisConfigurationTests {
 
     @Test
     void 格式非法的连接串报错时不带出密码() {
-        assertThatThrownBy(() -> new RedisConfiguration().jedis(withUri("redis://user:s3cret@[bad host:6379")))
+        assertThatThrownBy(() -> new RedisConfiguration().jedis(withUri("redis://user:s3cret@[bad host:6379")).close())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("无法连接 Redis")
                 .satisfies(error -> assertThat(allMessages(error)).doesNotContain("s3cret"));
@@ -31,7 +33,7 @@ class RedisConfigurationTests {
 
     @Test
     void 连不上时报错也不带出密码() {
-        assertThatThrownBy(() -> new RedisConfiguration().jedis(withUri("redis://:s3cret@127.0.0.1:1")))
+        assertThatThrownBy(() -> new RedisConfiguration().jedis(withUri("redis://:s3cret@127.0.0.1:1")).close())
                 .isInstanceOf(IllegalStateException.class)
                 .satisfies(error -> assertThat(allMessages(error)).doesNotContain("s3cret"));
     }
@@ -55,7 +57,7 @@ class RedisConfigurationTests {
     @Test
     void 这些笔误连接串在连不上时报错信息也不带出密码片段() {
         for (String uri : new String[] {"redis://:Pw9x@ss@127.0.0.1:1", "redis://u:Pw9x/ss@127.0.0.1:1", "redis://:Pw9x?ss@127.0.0.1:1"}) {
-            assertThatThrownBy(() -> new RedisConfiguration().jedis(withUri(uri)))
+            assertThatThrownBy(() -> new RedisConfiguration().jedis(withUri(uri)).close())
                     .isInstanceOf(IllegalStateException.class)
                     .satisfies(error -> assertThat(allMessages(error)).as(uri).doesNotContain("Pw9x"));
         }
@@ -63,7 +65,7 @@ class RedisConfigurationTests {
 
     @Test
     void scheme不合法时报错且不带出密码() {
-        assertThatThrownBy(() -> new RedisConfiguration().jedis(withUri("http://:Pw9x@host:6379")))
+        assertThatThrownBy(() -> new RedisConfiguration().jedis(withUri("http://:Pw9x@host:6379")).close())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("必须是 redis:// 或 rediss:// 开头的连接串")
                 .hasMessageContaining("YOKE_REDIS_URI")

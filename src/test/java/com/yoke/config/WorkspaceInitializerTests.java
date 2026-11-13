@@ -2,6 +2,7 @@ package com.yoke.config;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,7 +16,9 @@ class WorkspaceInitializerTests {
 
     private static YokeProperties props(Path workspace) {
         return new YokeProperties(new YokeProperties.Redis("redis://127.0.0.1:6379", "yoke:"),
-                new YokeProperties.Compaction(30, 10), workspace.toString());
+                new YokeProperties.Compaction(30, 10), workspace.toString(),
+                new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null, null)),
+                new YokeProperties.Mcp(List.of()));
     }
 
     @Test
