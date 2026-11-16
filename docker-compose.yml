@@ -15,7 +15,7 @@ services:
       retries: 15
 
   nacos:
-    # 固定版本，不用 latest。选 v3.2.1-2026.03.30 是因为它与 AgentScope 2.0.4 带进来的 nacos-client（3.2.1-2026.03.30）
+    # 固定版本，不用 latest。选 v3.2.1-2026.03.30 是因为它与 AgentScope 带进来的 nacos-client（3.2.1-2026.03.30）
     # 同一个构建：AI 通道（Agent Card / Prompt）的 gRPC 协议在 3.x 各小版本间有差异，客户端和服务端版本对齐最稳
     image: nacos/nacos-server:v3.2.1-2026.03.30
     environment:

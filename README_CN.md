@@ -64,7 +64,7 @@ curl -X POST localhost:8080/api/chat \
 - 只传 `userId`：为该用户新建一个会话，新的会话 ID 在响应里返回
 - 都不传：`default` 用户下新建会话
 
-不会把「只给其一」直接交给框架：AgentScope 2.0.4 里缺 `sessionId` 会落到以 Agent 名称命名的共享会话，缺 `userId` 会落到匿名用户，所有调用方的历史会混在一起。两个标识只能包含字母、数字、`_`、`.`、`-`，长度 1 到 64，且不能全是点（`.`、`..` 会被拒绝），否则返回 400。原因是框架把槽位拼成 `userId/sessionId`，允许 `/` 会让不同的一对撞到同一个槽位，`userId` 还会成为工作区的目录名。目前没有鉴权，`userId` 由调用方自报，不是身份校验。
+不会把「只给其一」直接交给框架：AgentScope 里缺 `sessionId` 会落到以 Agent 名称命名的共享会话，缺 `userId` 会落到匿名用户，所有调用方的历史会混在一起。两个标识只能包含字母、数字、`_`、`.`、`-`，长度 1 到 64，且不能全是点（`.`、`..` 会被拒绝），否则返回 400。原因是框架把槽位拼成 `userId/sessionId`，允许 `/` 会让不同的一对撞到同一个槽位，`userId` 还会成为工作区的目录名。目前没有鉴权，`userId` 由调用方自报，不是身份校验。
 
 每个会话在 Redis 里存了什么（用真实模型实测：两轮对话，其中一轮调用了工具）：
 
@@ -130,7 +130,7 @@ data:{"type":"RUN_FINISHED","threadId":"demo","runId":"…"}
 | `RUN_FINISHED` | 正常结束 |
 | `RUN_ERROR` | 推理出错；HTTP 状态码仍是 200，流正常结束而不是断开连接。message 是原样的异常信息，未做脱敏，不要直接展示给终端用户 |
 
-每次流都以 `RUN_STARTED` 开头（创建 Agent 失败时也一样），以 `RUN_FINISHED` 或 `RUN_ERROR` 结尾，二者不会同时出现。Agent 运行中出错时，`RUN_ERROR` 的 `code` 由 AG-UI 适配器按异常类型映射（`TIMEOUT_ERROR`、`INTERRUPTED_ERROR`、`INVALID_INPUT_ERROR` 或 `INTERNAL_ERROR`）；适配器之外的失败（例如创建 Agent 失败）一律是 `INTERNAL_ERROR`。没有 `done` 事件，也不重复最终全文：由客户端拼接 `TEXT_MESSAGE_CONTENT`。流正常结束、出错或客户端断开时，临时 Agent 都会被关闭。适配器的 `runTimeout` 配置在 AgentScope 2.0.4 里没有被读取，所以它不能限制运行时长。
+每次流都以 `RUN_STARTED` 开头（创建 Agent 失败时也一样），以 `RUN_FINISHED` 或 `RUN_ERROR` 结尾，二者不会同时出现。Agent 运行中出错时，`RUN_ERROR` 的 `code` 由 AG-UI 适配器按异常类型映射（`TIMEOUT_ERROR`、`INTERRUPTED_ERROR`、`INVALID_INPUT_ERROR` 或 `INTERNAL_ERROR`）；适配器之外的失败（例如创建 Agent 失败）一律是 `INTERNAL_ERROR`。没有 `done` 事件，也不重复最终全文：由客户端拼接 `TEXT_MESSAGE_CONTENT`。流正常结束、出错或客户端断开时，临时 Agent 都会被关闭。适配器的 `runTimeout` 配置在 AgentScope 里没有被读取，所以它不能限制运行时长。
 
 > **不兼容变更**
 > 流式接口原先的私有事件（`textDelta`、`toolCall`、`toolResult`、`hint`、`done`、`error`）和 `{"sessionId", "message"}` 请求体已经移除。流式接口现在只接受 `Content-Type: application/json`，不带 `Content-Type`、或者用 `text/plain`、`application/*+json` 的请求都会返回 415。`POST /api/chat` 的 `sessionId` 现在按 `threadId` 的同一条规则校验（以前 `user:42` 这类非空白值能通过，现在返回 400）；空白的 `sessionId` 仍然新建会话。
@@ -172,12 +172,12 @@ Yoke 自己的配置使用 `yoke.*` 前缀：
 | `yoke.nacos.*` | Nacos 连接（`server-addr` 默认 `127.0.0.1:8848`、`namespace`、`username` / `password` 来自环境变量 `YOKE_NACOS_USERNAME` / `YOKE_NACOS_PASSWORD`）和开关 `a2a.enabled`、`prompt.enabled`（及 `prompt.key`），全部默认关闭且互不绑定 |
 | `yoke.mcp.servers[]` | 外部 MCP 服务，默认一个也不接。每项有 `name`、`transport`（只能是 `sse` 或 `streamable-http`）、`url`、`timeout`（默认 30 秒）和可选的 `headers`。配置 `stdio` 会让应用启动失败；服务连不上同样启动失败 |
 
-Agent 创建时不开放文件、命令和联网工具。读 2.0.4 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，所以联网工具除了主 Agent 的 `disableWebTools()`，还用 `ToolsConfig` 的 deny 名单禁掉，它同时作用于主 Agent、内置的 `general-purpose` 子 Agent 和所有声明的子 Agent。显式传入 `ToolsConfig` 还会让 2.0.4 不再去读工作区里的 `tools.json`（那个文件可以声明 `stdio` MCP 服务，也就是在宿主机上启动进程）。读类的记忆和会话工具（`memory_get`、`memory_search`、`session_history`、`session_list`、`session_search`）也被同一份 deny 名单拒绝：`memory_get` 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，`session_history` 把模型给的 ID 直接拼进路径，开着就能让模型读到别的用户的记忆和会话。模型看到的工具恰好是：Yoke 自己的（`get_weather`、`get_current_time`、`calculate`、`list_my_notes`、`retrieve`），框架的写记忆、技能加载、异步结果、子 Agent 和后台任务类工具（`memory_save` 只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制），再加上所配置的 MCP 服务公布的工具。`ToolPermissionTests` 用精确集合断言这份清单，框架升级新增了工具会让构建失败。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
+Agent 创建时不开放文件、命令和联网工具。读 AgentScope 源码发现子 Agent 只继承文件和 shell 的关闭、不继承联网工具的关闭，所以联网工具除了主 Agent 的 `disableWebTools()`，还用 `ToolsConfig` 的 deny 名单禁掉，它同时作用于主 Agent、内置的 `general-purpose` 子 Agent 和所有声明的子 Agent。显式传入 `ToolsConfig` 还会让 AgentScope 不再去读工作区里的 `tools.json`（那个文件可以声明 `stdio` MCP 服务，也就是在宿主机上启动进程）。读类的记忆和会话工具（`memory_get`、`memory_search`、`session_history`、`session_list`、`session_search`）也被同一份 deny 名单拒绝：`memory_get` 只校验路径不越出工作区根目录、不校验是否在当前用户目录下，`session_history` 把模型给的 ID 直接拼进路径，开着就能让模型读到别的用户的记忆和会话。模型看到的工具恰好是：Yoke 自己的（`get_weather`、`get_current_time`、`calculate`、`list_my_notes`、`retrieve`），框架的写记忆、技能加载、异步结果、子 Agent 和后台任务类工具（`memory_save` 只往工作区固定的 `MEMORY.md` 与 `memory/<日期>.md` 追加，内容没有大小限制），再加上所配置的 MCP 服务公布的工具。`ToolPermissionTests` 用精确集合断言这份清单，框架升级新增了工具会让构建失败。容器里的 `MiddlewareBase` Bean 会挂到每个新建的 Agent 上；`LoggingMiddleware` 记录 Agent、模型、工具的耗时，不记录工具的参数和输出。OpenTelemetry 追踪默认不挂载：需要时自行引入 OpenTelemetry SDK 和导出器，再注册一个 `OtelTracingMiddleware` Bean。
 
 ## 工具、知识库与子 Agent
 
 - **工具**（`com.yoke.tool`）：带 `@Tool` 方法的普通类，启动时一次性注册进共享的 `Toolkit`。`calculate` 用手写的递归下降解析器（不用脚本引擎，输入长度和嵌套深度有上限，除零以文本形式报告）。`list_my_notes` 的 `UserContext` 参数不带 `@ToolParam`：框架按类型从本次请求的 `RuntimeContext` 里注入，模型既看不到也伪造不了用户标识。
-- **检索**：`retrieve` 工具检索 `src/main/resources/knowledge/*.md`，返回带稳定编号（形如 `[文档名.md#片段编号]`，文档名加正文摘要，正文改了编号也跟着变，旧引用不会指到别的内容上；不同 classpath 根里有同名知识文档时启动即失败）和来源的片段，并要求模型原样照抄编号引用；同一轮对话里多次检索编号也不会重复，不像每次从 `[1]` 开始的序号会冲突。它是唯一的检索通道，有意不同时使用框架的 `knowledge()` 自动注入。检索分层放在应用自己的 `RetrievePort` 后面（不含框架类型）：BM25 关键词检索永远可用；配置了向量化服务就再加一路向量检索，两路用 RRF（常数 60）融合，任何一路失败就用另一路。注意开启向量化后，用户的检索问题和知识库语料会发送给 embedding 服务提供方。没有使用框架自带的 `rag-simple`：`core/rag` 包在 2.0.4 里已 `@Deprecated(forRemoval = true)`，而且该模块会拖进 Qdrant、Milvus、Elasticsearch、PostgreSQL、PDFBox、POI、Tika 等一大批依赖。
+- **检索**：`retrieve` 工具检索 `src/main/resources/knowledge/*.md`，返回带稳定编号（形如 `[文档名.md#片段编号]`，文档名加正文摘要，正文改了编号也跟着变，旧引用不会指到别的内容上；不同 classpath 根里有同名知识文档时启动即失败）和来源的片段，并要求模型原样照抄编号引用；同一轮对话里多次检索编号也不会重复，不像每次从 `[1]` 开始的序号会冲突。它是唯一的检索通道，有意不同时使用框架的 `knowledge()` 自动注入。检索分层放在应用自己的 `RetrievePort` 后面（不含框架类型）：BM25 关键词检索永远可用；配置了向量化服务就再加一路向量检索，两路用 RRF（常数 60）融合，任何一路失败就用另一路。注意开启向量化后，用户的检索问题和知识库语料会发送给 embedding 服务提供方。没有使用框架自带的 `rag-simple`：`core/rag` 包在 AgentScope 里已 `@Deprecated(forRemoval = true)`，而且该模块会拖进 Qdrant、Milvus、Elasticsearch、PostgreSQL、PDFBox、POI、Tika 等一大批依赖。
 - **MCP**：只接受 HTTP 传输。示例：
 
   ```yaml
@@ -192,8 +192,8 @@ Agent 创建时不开放文件、命令和联网工具。读 2.0.4 源码发现�
             Authorization: Bearer ${MCP_DOCS_TOKEN}
   ```
 
-  工具以服务端公布的名字出现。2.0.4 里 MCP 工具只有服务端声明了 `readOnlyHint` 才会免确认执行，而 Yoke 的 HTTP 接口没有人工确认通道（否则一轮对话会在工具调用处无声结束、回复为空）。所以只注册声明了只读的工具，其余跳过（工具名记在 INFO 日志里），主 Agent 和子 Agent 都看不到它们。公布的工具与 Yoke 自己的工具或 Harness 内置工具（`memory_save`、`agent_spawn` 等，每次请求建 Agent 时才加进去）重名时，启动失败。
-- **子 Agent**：`summarizer` 在代码里声明（`YokeSubagents`），没有任何工具；`kb-researcher` 由 `src/main/resources/workspace/subagents/kb-researcher.md` 声明，启动时拷贝到 `yoke.workspace/subagents/`，只能用 `retrieve`。2.0.4 对同 id 冲突是静默的：工作区文件会覆盖代码里的声明（`general-purpose.md` 还会替换内置的那个），所以 Yoke 会扫描 `yoke.workspace/subagents/` 里实际存在的全部文件（包括遗留的、手放的，不只是随应用发布的那几个），遇到任何这类重名都直接启动失败。
+  工具以服务端公布的名字出现。AgentScope 里 MCP 工具只有服务端声明了 `readOnlyHint` 才会免确认执行，而 Yoke 的 HTTP 接口没有人工确认通道（否则一轮对话会在工具调用处无声结束、回复为空）。所以只注册声明了只读的工具，其余跳过（工具名记在 INFO 日志里），主 Agent 和子 Agent 都看不到它们。公布的工具与 Yoke 自己的工具或 Harness 内置工具（`memory_save`、`agent_spawn` 等，每次请求建 Agent 时才加进去）重名时，启动失败。
+- **子 Agent**：`summarizer` 在代码里声明（`YokeSubagents`），没有任何工具；`kb-researcher` 由 `src/main/resources/workspace/subagents/kb-researcher.md` 声明，启动时拷贝到 `yoke.workspace/subagents/`，只能用 `retrieve`。AgentScope 对同 id 冲突是静默的：工作区文件会覆盖代码里的声明（`general-purpose.md` 还会替换内置的那个），所以 Yoke 会扫描 `yoke.workspace/subagents/` 里实际存在的全部文件（包括遗留的、手放的，不只是随应用发布的那几个），遇到任何这类重名都直接启动失败。
 
 要换成其他模型，把 `build.gradle` 里的 `agentscope-openai-spring-boot-starter` 换成对应的 starter（dashscope、anthropic、gemini、ollama），并修改 `agentscope.model.provider`。
 
@@ -213,7 +213,7 @@ export YOKE_A2A_TOKEN=$(openssl rand -hex 24)
 > **警告**
 > 开启就是暴露一个**无认证**的入口，能力等价于 `/api/chat`（同一批工具、同一个历史存储），调用方还能自报任意 `userId`。生产必须放在网关后面，或者至少配置 `yoke.a2a.server.token`：配置后 JSON-RPC 端点要求 `Authorization: Bearer <token>`（常量时间比较，否则 401），Agent Card 里同步声明 Bearer 认证。不配置 token 就不做任何校验，启动时会打一条 WARN。
 
-- 协议：AgentScope 2.0.4 实现的是 A2A 0.3（SDK `0.3.3.Final`，`protocolVersion` 为 `0.3.0`），只有 JSON-RPC 传输。以上以 2.0.4 为准，更新版本的 AgentScope 已改为 A2A 1.0、不再支持 0.3，请以对应版本的手册为准。只提供同步的 `message/send`（Card 里 `streaming: false`）；`message/stream` 和 `tasks/resubscribe` 返回「不支持的操作」，其余方法返回「方法不存在」。
+- 协议：AgentScope 实现的是 A2A 0.3（SDK `0.3.3.Final`，`protocolVersion` 为 `0.3.0`），只有 JSON-RPC 传输。以上以 Yoke 当前使用的 AgentScope 为准，更新版本的 AgentScope 已改为 A2A 1.0、不再支持 0.3，请以对应版本的手册为准。只提供同步的 `message/send`（Card 里 `streaming: false`）；`message/stream` 和 `tasks/resubscribe` 返回「不支持的操作」，其余方法返回「方法不存在」。
 - 传输安全：Bearer Token 走明文 HTTP，`public-url` 缺省是 `http://localhost:端口`。生产要用 `https` 的对外地址，或由网关终结 TLS。token 少于 16 个字符会启动失败。请求体超过 `yoke.a2a.server.max-body-bytes`（默认 256 KB）返回 413（响应体 `-32600`）：认证先于读体，声明的 `Content-Length` 超限不读体，chunked 请求限长读取；`/api/chat` 没有这类自定义上限。
 - 会话：`sessionId` 取 `metadata.sessionId`，没有则取 `contextId`，再没有就新建；`userId` 取 `metadata.userId`，缺失为 `default`。二者和 HTTP 接口用同一条 `@SafeId` 规则，不合法返回 `-32602`。响应里的 `contextId` 就是会话 ID，带上它即可延续对话。
 - 失败返回 JSON-RPC 的 `-32603`，消息是固定的一句话，不含异常内容。
