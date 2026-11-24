@@ -251,14 +251,14 @@ src/main/java/com/yoke/
 ├── a2a/                        A2A server gateway, runner and remote client (a2a/runner adapts HarnessAgent to the A2A AgentRunner)
 ├── api/                        HTTP contract (ChatApi, A2aApi, RemoteChatApi: paths, validation and docs live here)
 ├── codec/                      Conversion between domain types and framework types (MessageCodec, AguiStreamCodec, HintEventConverter)
-├── config/                     Agent, Redis, AG-UI adapter, tool, knowledge and sub-agent configuration (HarnessAgentFactory, YokeProperties, YokeSubagents)
-├── controller/                 Contract implementation (ChatController)
+├── config/                     Agent, Redis, AG-UI, A2A, Nacos, tool, knowledge and sub-agent configuration (HarnessAgentFactory, YokeProperties, YokeSubagents)
+├── controller/                 Contract implementation (ChatController, A2aController, RemoteChatController)
 ├── knowledge/                  Retrieval port and implementations: keyword, vector, RRF fusion (no framework types)
 ├── mcp/                        Connections to external MCP servers (HTTP transports only)
 ├── middleware/                 Agent middlewares (LoggingMiddleware)
 ├── nacos/                      Nacos client probe, A2A registration, prompt hot-reload middleware
-├── model/                      Request and response objects (ChatRequest, ChatResponse)
-└── tool/                       Tools exposed to the model (WeatherTool, ChatTools, RetrieveTool, UserContext)
+├── model/                      Domain, request and response objects (ChatRequest, ChatResponse, RemoteChatRequest, SafeId, UserContext, Passage)
+└── tool/                       Tools exposed to the model (WeatherTool, ChatTools, RetrieveTool, SharedToolkit)
 src/main/resources/             application.yml, the per-profile configuration, knowledge/*.md and workspace/subagents/*.md
 docker-compose.yml              Local Redis and Nacos, also used by the integration tests
 docs/brand/                     Logo

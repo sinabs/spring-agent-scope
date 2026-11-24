@@ -251,14 +251,14 @@ src/main/java/com/yoke/
 ├── a2a/                        A2A 服务端网关、runner（a2a/runner 把 HarnessAgent 适配成 A2A 的 AgentRunner）和远端客户端
 ├── api/                        HTTP 接口契约（ChatApi、A2aApi、RemoteChatApi，路径、校验和文档都在这里）
 ├── codec/                      领域类型与框架类型之间的转换（MessageCodec、AguiStreamCodec、HintEventConverter）
-├── config/                     Agent、Redis、AG-UI 适配器、工具、知识库与子 Agent 配置（HarnessAgentFactory、YokeProperties、YokeSubagents）
-├── controller/                 接口实现（ChatController）
+├── config/                     Agent、Redis、AG-UI、A2A、Nacos、工具、知识库与子 Agent 配置（HarnessAgentFactory、YokeProperties、YokeSubagents）
+├── controller/                 接口实现（ChatController、A2aController、RemoteChatController）
 ├── knowledge/                  检索端口及实现：关键词、向量、RRF 融合（不含框架类型）
 ├── mcp/                        到外部 MCP 服务的连接（只支持 HTTP 传输）
 ├── middleware/                 Agent 中间件（LoggingMiddleware）
 ├── nacos/                      Nacos 客户端探活、A2A 注册、Prompt 热更新中间件
-├── model/                      请求与响应对象（ChatRequest、ChatResponse）
-└── tool/                       暴露给模型的工具（WeatherTool、ChatTools、RetrieveTool、UserContext）
+├── model/                      领域、请求与响应对象（ChatRequest、ChatResponse、RemoteChatRequest、SafeId、UserContext、Passage）
+└── tool/                       暴露给模型的工具（WeatherTool、ChatTools、RetrieveTool、SharedToolkit）
 src/main/resources/             application.yml、各环境配置、knowledge/*.md 和 workspace/subagents/*.md
 docker-compose.yml              本地 Redis 和 Nacos，集成测试也用它
 docs/brand/                     logo
