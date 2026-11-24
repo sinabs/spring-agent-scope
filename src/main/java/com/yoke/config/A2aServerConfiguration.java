@@ -3,6 +3,7 @@ package com.yoke.config;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -66,11 +67,7 @@ public class A2aServerConfiguration {
             ExecutorService a2aExecutor) {
         YokeProperties.A2a.Server server = yoke.a2a().server();
         requireStrongToken(server);
-        URI base = URI.create(baseUrl(server, env));
-        boolean tls = "https".equalsIgnoreCase(base.getScheme());
-        int port = base.getPort() > 0 ? base.getPort() : tls ? 443 : 80;
-        TransportProperties transport = TransportProperties.builder(TransportProtocol.JSONRPC.asString())
-                .host(base.getHost()).port(port).path(RPC_PATH).supportTls(tls).build();
+        TransportProperties transport = resolveTransport(server, env);
 
         ConfigurableAgentCard.Builder card = new ConfigurableAgentCard.Builder()
                 .name(runner.getAgentName())
@@ -128,10 +125,27 @@ public class A2aServerConfiguration {
                 skill.tags(), List.of(), null, null, null);
     }
 
-    private static String baseUrl(YokeProperties.A2a.Server server, Environment env) {
-        if (StrUtil.isNotBlank(server.publicUrl())) {
-            return server.publicUrl();
+    static TransportProperties resolveTransport(YokeProperties.A2a.Server server, Environment env) {
+        String raw = Optional.ofNullable(server.publicUrl()).filter(StrUtil::isNotBlank)
+                .map(String::trim)
+                .orElseGet(() -> "http://localhost:" + env.getProperty("server.port", "8080"));
+        if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+            throw new IllegalStateException("yoke.a2a.server.public-url 必须以 http:// 或 https:// 开头");
         }
-        return "http://localhost:" + env.getProperty("server.port", "8080");
+        URI base;
+        try {
+            base = URI.create(raw);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("yoke.a2a.server.public-url 不是合法的 URL");
+        }
+        if (Objects.isNull(base.getHost()) || Objects.nonNull(base.getRawUserInfo())
+                || Objects.nonNull(base.getRawQuery()) || Objects.nonNull(base.getRawFragment())) {
+            throw new IllegalStateException("yoke.a2a.server.public-url 格式不合法：需要有效的协议与主机，且不能带用户信息、查询参数或片段");
+        }
+        boolean tls = "https".equalsIgnoreCase(base.getScheme());
+        int port = base.getPort() > 0 ? base.getPort() : tls ? 443 : 80;
+        String basePath = Optional.ofNullable(base.getPath()).orElse("").replaceAll("/+$", "");
+        return TransportProperties.builder(TransportProtocol.JSONRPC.asString())
+                .host(base.getHost()).port(port).path(basePath + RPC_PATH).supportTls(tls).build();
     }
 }

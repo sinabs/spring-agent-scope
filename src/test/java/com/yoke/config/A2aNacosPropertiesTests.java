@@ -124,4 +124,31 @@ class A2aNacosPropertiesTests {
         assertThat(bind(Map.of("yoke.a2a.server.max-body-bytes", "-5")).a2a().server().maxBodyBytes()).isEqualTo(262144);
         assertThat(bind(Map.of("yoke.a2a.server.max-body-bytes", "1000")).a2a().server().maxBodyBytes()).isEqualTo(1000);
     }
+
+    @Test
+    void 对外根地址支持反向代理子路径且不合法地址直接拒绝() {
+        org.springframework.mock.env.MockEnvironment env = new org.springframework.mock.env.MockEnvironment()
+                .withProperty("server.port", "9090");
+
+        var defaulted = A2aServerConfiguration.resolveTransport(bind(Map.of()).a2a().server(), env);
+        assertThat(defaulted.host()).isEqualTo("localhost");
+        assertThat(defaulted.port()).isEqualTo(9090);
+        assertThat(defaulted.path()).isEqualTo("/a2a");
+        assertThat(defaulted.supportTls()).isFalse();
+
+        var subpath = A2aServerConfiguration.resolveTransport(
+                bind(Map.of("yoke.a2a.server.public-url", "https://agent.example.com/yoke/")).a2a().server(), env);
+        assertThat(subpath.host()).isEqualTo("agent.example.com");
+        assertThat(subpath.port()).isEqualTo(443);
+        assertThat(subpath.path()).isEqualTo("/yoke/a2a");
+        assertThat(subpath.supportTls()).isTrue();
+
+        for (String bad : new String[] {"localhost:8080", "http://bad_host:8080", "https://example.com?token=leak"}) {
+            YokeProperties.A2a.Server server = bind(Map.of("yoke.a2a.server.public-url", bad)).a2a().server();
+            assertThatThrownBy(() -> A2aServerConfiguration.resolveTransport(server, env))
+                    .as("public-url=%s", bad)
+                    .isInstanceOf(IllegalStateException.class)
+                    .satisfies(e -> assertThat(e.getMessage()).doesNotContain("leak"));
+        }
+    }
 }
