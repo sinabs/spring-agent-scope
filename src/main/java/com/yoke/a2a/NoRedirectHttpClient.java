@@ -19,7 +19,7 @@ import org.jspecify.annotations.NonNull;
 /**
  * 给 A2A 客户端用的 HTTP 客户端：<b>不跟随重定向</b>，并给每个请求设上超时。
  *
- * <p>官方的 {@code JdkA2AHttpClient} 用 {@code Redirect.NORMAL}（读 0.3.3.Final 字节码所得，并实测）：
+ * <p>官方的 {@code JdkA2AHttpClient} 用 {@code Redirect.NORMAL}（读 A2A SDK 字节码所得，并实测）：
  * 远端对 {@code POST /a2a} 回一个 307，客户端会把消息体原样重发到 Location 指向的任意主机。
  * 同源校验只管 Agent Card 里的地址，管不到重定向，所以这里直接把重定向关掉：3xx 当作失败。
  * 超时也一并解决了「{@code Mono.timeout} 只取消等待、底层请求还挂着」的问题。

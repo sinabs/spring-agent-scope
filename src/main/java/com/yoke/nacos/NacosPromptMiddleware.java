@@ -20,7 +20,7 @@ import reactor.core.scheduler.Schedulers;
  * Prompt 热更新：每轮组装系统提示词时，直接向 Nacos 拉最新的 Prompt，追加到内置提示词之后。
  *
  * <p>为什么每轮直接拉，而不用官方的 {@code NacosPromptListener}：后者在本地缓存 Prompt，靠服务端推送更新，
- * 一次性手工测量（AgentScope 加 Nacos 3.2.1）改完后要过 8 到 18 秒缓存才变，而直接 {@code getPrompt} 改完立刻拿到新版本。
+ * 一次性手工测量（AgentScope 加 Nacos 3.x）改完后要过 8 到 18 秒缓存才变，而直接 {@code getPrompt} 改完立刻拿到新版本。
  * 代价是每轮多一次 gRPC 往返。
  *
  * <p>为什么是追加而不是替换：内置提示词里还有 Harness 自己拼进去的工作区、工具、技能说明，替换会把它们一起抹掉。

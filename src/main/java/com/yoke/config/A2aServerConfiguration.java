@@ -50,9 +50,10 @@ public class A2aServerConfiguration {
     @Bean
     public YokeAgentRunner yokeAgentRunner(HarnessAgentFactory factory, AgentscopeProperties agentscope, YokeProperties yoke) {
         YokeProperties.A2a.Card card = yoke.a2a().server().card();
-        String name = StrUtil.isNotBlank(card.name()) ? card.name() : agentscope.getAgent().getName();
-        String description = StrUtil.isNotBlank(card.description()) ? card.description()
-                : "Yoke：基于 AgentScope 的对话 Agent，通过 A2A 协议提供同步问答";
+        String name = Optional.ofNullable(card.name()).filter(StrUtil::isNotBlank)
+                .orElseGet(() -> agentscope.getAgent().getName());
+        String description = Optional.ofNullable(card.description()).filter(StrUtil::isNotBlank)
+                .orElse("Yoke：基于 AgentScope 的对话 Agent，通过 A2A 协议提供同步问答");
         return new YokeAgentRunner(factory, name, description, yoke.a2a().server().timeout());
     }
 
@@ -121,7 +122,7 @@ public class A2aServerConfiguration {
 
     private static AgentSkill skill(YokeProperties.A2a.Skill skill) {
         return new AgentSkill(skill.id(), skill.name(),
-                StrUtil.isNotBlank(skill.description()) ? skill.description() : skill.name(),
+                Optional.ofNullable(skill.description()).filter(StrUtil::isNotBlank).orElseGet(skill::name),
                 skill.tags(), List.of(), null, null, null);
     }
 

@@ -46,7 +46,7 @@ public final class NacosSupport {
     /**
      * Nacos 客户端默认把日志写到 {@code ~/logs/nacos}、把服务快照缓存写到 {@code ~/nacos}，污染用户主目录，
      * 还可能和同一台机器上别的 Nacos 应用混在一起。这里在第一次创建客户端<b>之前</b>把它们指到工作区下的子目录
-     * （属性名 {@code JM.LOG.PATH}、{@code JM.SNAPSHOT.PATH}，读 nacos-client 3.2.1 的日志配置和 CacheDirUtil 所得，
+     * （属性名 {@code JM.LOG.PATH}、{@code JM.SNAPSHOT.PATH}，读 nacos-client 的日志配置和 CacheDirUtil 所得，
      * 日志目录属性也实测有效）。这两个是 JVM 系统属性，已经显式设置过就尊重它；
      * 日志框架在第一个客户端创建时初始化一次，之后再改不再生效。
      */
