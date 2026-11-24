@@ -17,6 +17,7 @@ import com.yoke.support.TestAgents;
 import com.yoke.config.YokeProperties;
 import com.yoke.mcp.McpConnections;
 import io.agentscope.core.tool.Toolkit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -51,8 +52,15 @@ class ToolConversationTests {
         return AguiTestSupport.run(controller, threadId, text);
     }
 
-    private static ChatController controller(ScriptedModel model, Path workspace, Toolkit toolkit) {
-        return AguiTestSupport.controller(TestAgents.factory(model, workspace, toolkit));
+    private final TestAgents.CloseTracker tracker = new TestAgents.CloseTracker();
+
+    @AfterEach
+    void awaitAgentsClosed() throws Exception {
+        tracker.awaitAllClosed();
+    }
+
+    private ChatController controller(ScriptedModel model, Path workspace, Toolkit toolkit) {
+        return AguiTestSupport.controller(tracker.wrap(TestAgents.factory(model, workspace, toolkit)));
     }
 
     @Test

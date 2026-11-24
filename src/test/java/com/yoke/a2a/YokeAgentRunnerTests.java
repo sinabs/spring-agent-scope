@@ -4,8 +4,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import com.yoke.a2a.runner.YokeAgentRunner;
 import com.yoke.config.HarnessAgentFactory;
@@ -19,16 +17,15 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.tool.Toolkit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -43,35 +40,15 @@ class YokeAgentRunnerTests {
         return toolkit;
     }
 
-    /** 本测试创建的那个 Agent 关闭完成时计数。 */
-    private final CountDownLatch closed = new CountDownLatch(1);
+    private final TestAgents.CloseTracker tracker = new TestAgents.CloseTracker();
 
-    /**
-     * 与线上同一个工厂，只是在 Agent 关闭完成时计数。runner 用 eager=false，结果先于关闭到达调用方，
-     * 测试要等关闭完成才能安全地删掉临时工作区（关闭时还会往里写记忆文件）。
-     */
-    private YokeAgentRunner runner(ScriptedModel model, Path workspace, Duration timeout) {
-        HarnessAgentFactory real = TestAgents.factory(model, workspace, toolkit());
-        HarnessAgentFactory factory = mock(HarnessAgentFactory.class);
-        when(factory.create()).thenAnswer(_ -> {
-            io.agentscope.harness.agent.HarnessAgent agent = real.create();
-            io.agentscope.harness.agent.HarnessAgent tracked =
-                    mock(io.agentscope.harness.agent.HarnessAgent.class, delegatesTo(agent));
-            doAnswer(_ -> {
-                try {
-                    agent.close();
-                } finally {
-                    closed.countDown();
-                }
-                return null;
-            }).when(tracked).close();
-            return tracked;
-        });
-        return new YokeAgentRunner(factory, "yoke", "测试", timeout);
+    @AfterEach
+    void awaitAgentsClosed() throws Exception {
+        tracker.awaitAllClosed();
     }
 
-    private void awaitClosed() throws InterruptedException {
-        assertThat(closed.await(10, TimeUnit.SECONDS)).as("Agent 已关闭").isTrue();
+    private YokeAgentRunner runner(ScriptedModel model, Path workspace, Duration timeout) {
+        return new YokeAgentRunner(tracker.wrap(TestAgents.factory(model, workspace, toolkit())), "yoke", "测试", timeout);
     }
 
     private static AgentRequestOptions options(String task, String user, String session) {
@@ -92,25 +69,23 @@ class YokeAgentRunnerTests {
     }
 
     @Test
-    void 只放行最终结果事件且只含文本(@TempDir Path workspace) throws InterruptedException {
+    void 只放行最终结果事件且只含文本(@TempDir Path workspace) {
         ScriptedModel model = new ScriptedModel(_ -> ScriptedModel.text("回复"));
 
         List<AgentEvent> events = runner(model, workspace, Duration.ofSeconds(30))
                 .streamEvents(input("你好"), options("t1", "u1", "s1")).collectList().block();
-        awaitClosed();
 
         assertThat(replyText(events)).isEqualTo("回复");
     }
 
     @Test
-    void 模型的思考过程不会出现在对外的结果里(@TempDir Path workspace) throws InterruptedException {
+    void 模型的思考过程不会出现在对外的结果里(@TempDir Path workspace) {
         ScriptedModel model = new ScriptedModel(_ -> List.of(
                 io.agentscope.core.message.ThinkingBlock.builder().thinking("内部思考不能外泄").build(),
                 io.agentscope.core.message.TextBlock.builder().text("最终答案").build()));
 
         List<AgentEvent> events = runner(model, workspace, Duration.ofSeconds(30))
                 .streamEvents(input("问"), options("t-think", "u", "s-think")).collectList().blockOptional().orElseThrow();
-        awaitClosed();
 
         Msg result = ((AgentResultEvent) events.getFirst()).getResult();
         assertThat(result.getTextContent()).isEqualTo("最终答案");
@@ -139,7 +114,7 @@ class YokeAgentRunnerTests {
     }
 
     @Test
-    void 缺失的userId按default处理_业务工具拿到的是它(@TempDir Path workspace) throws InterruptedException {
+    void 缺失的userId按default处理_业务工具拿到的是它(@TempDir Path workspace) {
         // list_my_notes 按 RuntimeContext 里的 UserContext 取当前用户的笔记：default 用户有「给 Redis 加上密码」
         ScriptedModel model = new ScriptedModel(call -> {
             if (call.systemText().startsWith("You are a memory")) {
@@ -151,13 +126,12 @@ class YokeAgentRunnerTests {
 
         List<AgentEvent> events = runner(model, workspace, Duration.ofSeconds(30))
                 .streamEvents(input("我的笔记"), options("t-notes", null, "s-notes")).collectList().block();
-        awaitClosed();
 
         assertThat(replyText(events)).contains("给 Redis 加上密码");
     }
 
     @Test
-    void 指定用户时业务工具拿到的是那个用户(@TempDir Path workspace) throws InterruptedException {
+    void 指定用户时业务工具拿到的是那个用户(@TempDir Path workspace) {
         ScriptedModel model = new ScriptedModel(call -> {
             if (call.systemText().startsWith("You are a memory")) {
                 return ScriptedModel.text("[]");
@@ -168,7 +142,6 @@ class YokeAgentRunnerTests {
 
         List<AgentEvent> events = runner(model, workspace, Duration.ofSeconds(30))
                 .streamEvents(input("我的笔记"), options("t-alice", "alice", "s-alice")).collectList().block();
-        awaitClosed();
 
         assertThat(replyText(events)).contains("评估 MCP 服务的鉴权方式");
     }
