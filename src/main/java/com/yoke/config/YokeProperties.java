@@ -194,14 +194,7 @@ public record YokeProperties(
         /** 地址和请求头里可能带令牌：toString 只留协议、主机和端口，请求头只列名字。 */
         @Override
         public @NonNull String toString() {
-            String origin;
-            try {
-                URI uri = URI.create(url);
-                origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
-            } catch (IllegalArgumentException e) {
-                origin = "<invalid>";
-            }
-            return "McpServer[name=" + name + ", transport=" + transport + ", url=" + origin
+            return "McpServer[name=" + name + ", transport=" + transport + ", url=" + originOnly(url)
                     + ", timeout=" + timeout + ", headers=" + headers.keySet() + "]";
         }
     }
@@ -324,12 +317,28 @@ public record YokeProperties(
                 return StrUtil.isNotBlank(url) || StrUtil.isNotBlank(agentName);
             }
 
-            /** 地址里可能带路径或参数，token 更不能进日志：只留名字、是否有 token。 */
+            /** 地址里可能带路径或参数，token 更不能进日志：只留协议、主机和端口，以及是否有 token。 */
             @Override
             public @NonNull String toString() {
-                return "Remote[url=" + url + ", agentName=" + agentName + ", token="
+                return "Remote[url=" + originOnly(url) + ", agentName=" + agentName + ", token="
                         + (StrUtil.isNotBlank(token) ? "***" : null) + ", timeout=" + timeout + "]";
             }
+        }
+    }
+
+    /** 只保留协议、主机和端口，去掉可能含敏感信息的路径、查询参数和用户信息；空值返回 null。 */
+    private static String originOnly(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(raw.trim());
+            if (Objects.isNull(uri.getScheme()) || Objects.isNull(uri.getHost())) {
+                return "<invalid>";
+            }
+            return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+        } catch (IllegalArgumentException e) {
+            return "<invalid>";
         }
     }
 

@@ -49,12 +49,14 @@ class A2aNacosPropertiesTests {
     @Test
     void 敏感配置的toString都脱敏() {
         YokeProperties yoke = bind(Map.of("yoke.a2a.server.token", "server-token-AAA", "yoke.a2a.remote.token", "remote-token-BBB",
-                "yoke.a2a.remote.url", "http://other:8080", "yoke.nacos.password", "nacos-pass-CCC", "yoke.nacos.username", "nacos-user"));
+                "yoke.a2a.remote.url", "http://other:8080/internal-path?queryParam=should-be-stripped",
+                "yoke.nacos.password", "nacos-pass-CCC", "yoke.nacos.username", "nacos-user"));
 
         String all = yoke.a2a().server() + " " + yoke.a2a().remote() + " " + yoke.nacos() + " " + yoke.a2a() + " " + yoke;
 
-        assertThat(all).doesNotContain("server-token-AAA").doesNotContain("remote-token-BBB").doesNotContain("nacos-pass-CCC");
-        assertThat(all).contains("token=***").contains("password=***");
+        assertThat(all).doesNotContain("server-token-AAA").doesNotContain("remote-token-BBB").doesNotContain("nacos-pass-CCC")
+                .doesNotContain("internal-path").doesNotContain("should-be-stripped");
+        assertThat(all).contains("url=http://other:8080").contains("token=***").contains("password=***");
     }
 
     @Test
