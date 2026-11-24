@@ -1,6 +1,6 @@
 [versions]
 spring-boot = "4.1.2"
-agentscope = "2.0.4"
+agentscope = "2.0.5"
 archunit = "1.4.1"
 hutool = "5.8.48"
 
@@ -12,6 +12,9 @@ agentscope-harness = { module = "io.agentscope:agentscope-harness" }
 agentscope-redis = { module = "io.agentscope:agentscope-extensions-redis" }
 agentscope-agui = { module = "io.agentscope:agentscope-extensions-agui" }
 agentscope-openai-starter = { module = "io.agentscope:agentscope-openai-spring-boot-starter" }
+agentscope-a2a-server = { module = "io.agentscope:agentscope-extensions-a2a-server" }
+agentscope-a2a-client = { module = "io.agentscope:agentscope-extensions-a2a-client" }
+agentscope-nacos-a2a = { module = "io.agentscope:agentscope-extensions-nacos-a2a" }
 testcontainers = { module = "org.testcontainers:testcontainers" }
 testcontainers-junit = { module = "org.testcontainers:testcontainers-junit-jupiter" }
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
@@ -19,6 +22,8 @@ hutool-core = { module = "cn.hutool:hutool-core", version.ref = "hutool" }
 lombok = { module = "org.projectlombok:lombok" }
 archunit = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+micrometer-registry-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
 

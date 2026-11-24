@@ -18,7 +18,7 @@ class WorkspaceInitializerTests {
         return new YokeProperties(new YokeProperties.Redis("redis://127.0.0.1:6379", "yoke:"),
                 new YokeProperties.Compaction(30, 10), workspace.toString(),
                 new YokeProperties.Knowledge(new YokeProperties.Knowledge.Embedding(null, null, null, null, null)),
-                new YokeProperties.Mcp(List.of()));
+                new YokeProperties.Mcp(List.of()), YokeProperties.A2a.disabled(), YokeProperties.Nacos.disabled());
     }
 
     @Test

@@ -67,9 +67,11 @@ class CompactionTests extends RedisIntegrationTest {
         String session = "compaction-len-" + UUID.randomUUID();
         java.util.List<Integer> sizes = new java.util.ArrayList<>();
 
+        // 每轮的提问要有一定长度：AgentScope 只接受比原历史更短的摘要，历史本身太短时摘要反而更长，会被拒绝
+        String padding = "补充说明：这是为了让历史足够长而写的填充内容。".repeat(30);
         for (int round = 1; round <= 8; round++) {
             int before = model.received.size();
-            controller.chat(new ChatRequest(session, "第" + round + "轮提问")).block();
+            controller.chat(new ChatRequest(session, "第" + round + "轮提问。" + padding)).block();
             sizes.add(reasoningSize(before, "第" + round + "轮提问"));
         }
 

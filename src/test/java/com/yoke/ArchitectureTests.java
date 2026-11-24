@@ -66,12 +66,13 @@ class ArchitectureTests {
             .should().dependOnClassesThat(FRAMEWORK_OUTSIDE_ALLOWED_LIST);
 
     /**
-     * 消息和事件类型只允许出现在 codec，以及实现框架中间件 SPI 的 middleware：
-     * MiddlewareBase 的钩子签名本身就是 Flux&lt;AgentEvent&gt;，实现它不可避免会碰到这些类型。
+     * 消息和事件类型只允许出现在 codec，以及实现框架 SPI 的 middleware 和 a2a.runner：
+     * MiddlewareBase 的钩子签名本身就是 Flux&lt;AgentEvent&gt;，A2A 的 AgentRunner 接口签名是
+     * {@code Flux<AgentEvent> streamEvents(List<Msg>, ...)}，实现它们不可避免会碰到这些类型。
      */
     @ArchTest
     static final ArchRule 框架的消息和事件类型只能出现在codec和middleware里 = noClasses()
-            .that().resideOutsideOfPackages("com.yoke.codec..", "com.yoke.middleware..")
+            .that().resideOutsideOfPackages("com.yoke.codec..", "com.yoke.middleware..", "com.yoke.a2a.runner..")
             .should().dependOnClassesThat().resideInAnyPackage("io.agentscope.core.message..", "io.agentscope.core.event..");
 
     /**
@@ -98,6 +99,61 @@ class ArchitectureTests {
     static final ArchRule MCP连接只依赖框架的tool包 = noClasses().that().resideInAPackage("com.yoke.mcp..")
             .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
                     DescribedPredicate.not(resideInAPackage("io.agentscope.core.tool.."))));
+
+    /** A2A 的网关和客户端（runner 除外）只用 A2A 协议类型和官方 A2A 扩展，不碰 Agent、模型、消息。 */
+    @ArchTest
+    static final ArchRule A2A包只依赖A2A协议和扩展 = noClasses()
+            .that().resideInAPackage("com.yoke.a2a..").and().resideOutsideOfPackage("com.yoke.a2a.runner..")
+            .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
+                    DescribedPredicate.not(resideInAPackage("io.agentscope.core.a2a.."))));
+
+    /**
+     * runner 是 A2A AgentRunner 的实现，只能用下面这几个框架类型：SPI 本身、每请求新建的 HarnessAgent、
+     * 运行时上下文、最终结果事件和消息（改写成纯文本回复要用）。
+     */
+    private static final Set<String> RUNNER_ALLOWED = Set.of(
+            "io.agentscope.core.a2a.server.executor.runner.AgentRunner",
+            "io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions",
+            "io.agentscope.harness.agent.HarnessAgent",
+            "io.agentscope.core.agent.RuntimeContext",
+            "io.agentscope.core.agent.RuntimeContext$Builder",
+            "io.agentscope.core.event.AgentEvent",
+            "io.agentscope.core.event.AgentResultEvent",
+            "io.agentscope.core.message.Msg",
+            "io.agentscope.core.message.Msg$Builder",
+            "io.agentscope.core.message.MsgRole");
+
+    @ArchTest
+    static final ArchRule A2A的runner只依赖白名单里的框架类型 = noClasses().that().resideInAPackage("com.yoke.a2a.runner..")
+            .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
+                    DescribedPredicate.not(new DescribedPredicate<>("the runner allowed types " + RUNNER_ALLOWED) {
+                        @Override
+                        public boolean test(JavaClass input) {
+                            return RUNNER_ALLOWED.contains(input.getName());
+                        }
+                    })));
+
+    /** Nacos 接线：Prompt 中间件实现 MiddlewareBase（要用 Agent、RuntimeContext），注册用官方的 nacos-a2a，其余一概不碰。 */
+    private static final Set<String> NACOS_ALLOWED = Set.of(
+            "io.agentscope.core.middleware.MiddlewareBase",
+            "io.agentscope.core.agent.Agent",
+            "io.agentscope.core.agent.RuntimeContext");
+
+    @ArchTest
+    static final ArchRule Nacos包只依赖中间件SPI和官方nacos_a2a = noClasses().that().resideInAPackage("com.yoke.nacos..")
+            .should().dependOnClassesThat(DescribedPredicate.and(resideInAPackage("io.agentscope.."),
+                    DescribedPredicate.not(resideInAPackage("io.agentscope.core.nacos.a2a..")),
+                    DescribedPredicate.not(new DescribedPredicate<>("the nacos allowed types " + NACOS_ALLOWED) {
+                        @Override
+                        public boolean test(JavaClass input) {
+                            return NACOS_ALLOWED.contains(input.getName());
+                        }
+                    })));
+
+    @ArchTest
+    static final ArchRule A2A和Nacos包不反向依赖接口层 = noClasses()
+            .that().resideInAnyPackage("com.yoke.a2a..", "com.yoke.nacos..")
+            .should().dependOnClassesThat().resideInAnyPackage("com.yoke.controller..", "com.yoke.api..");
 
     @ArchTest
     static final ArchRule AGUI协议类型只能出现在codec和config里 = noClasses()

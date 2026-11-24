@@ -75,6 +75,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
  *
  * <p>隐私：配置了向量化服务（{@code yoke.knowledge.embedding}）后，用户的检索问题和知识库语料会发送给该服务的提供方。
  *
+ * <p>请求体大小：本接口对 {@code message} 的长度没有自定义上限，只受容器默认值约束（A2A 入口有可配置的上限，见 {@link A2aApi}）。
+ *
+ * <p>其他入口：开启 {@code yoke.a2a.server.enabled} 后还有 A2A 入口（见 {@link A2aApi}），它走同一个 Agent 工厂、同一批工具、
+ * 同一个会话存储，能力与本接口等价，同样没有认证，开启即暴露一个无认证入口（可选的 Bearer Token 只是最小保护）；
+ * 配置了远端 A2A Agent 后有转发入口（见 {@link RemoteChatApi}）；Actuator 的 health、info、metrics、prometheus 端点和本接口在同一个端口、同样没有认证。
+ * A2A 和转发入口默认关闭；Actuator 默认开启但只暴露这四个端点，其中 metrics 和 prometheus 会泄露内部指标，生产应放在网关后面或改用单独的管理端口。
+ *
  * <p>已知限制：{@code HarnessAgent.close()} 会等待框架里全局的异步写入静默
  * （{@code awaitMirrorQuiescence} 和 {@code awaitQuiescence}，各最长 5 秒），它在每个请求的清理回调里执行，
  * 因此是跨请求耦合的：别的请求的在途写入会让这次关闭变慢。目前没有把关闭挪到专用线程，也没做并发压测。

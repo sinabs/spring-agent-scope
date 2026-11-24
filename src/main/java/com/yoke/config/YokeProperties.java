@@ -27,6 +27,8 @@ import org.springframework.validation.annotation.Validated;
  * @param workspace  HarnessAgent 的工作区目录，放压缩前转存的消息、记忆等本地文件
  * @param knowledge  知识库检索（可选的向量化配置）
  * @param mcp        要接入的外部 MCP 服务，默认一个也不接
+ * @param a2a        A2A 互通：对外暴露的服务端（默认关闭）和要调用的远端 Agent（默认没有）
+ * @param nacos      Nacos 接线：A2A 注册发现、Prompt 热更新，默认全部关闭
  */
 @Validated
 @ConfigurationProperties(prefix = "yoke")
@@ -35,7 +37,9 @@ public record YokeProperties(
         @DefaultValue Compaction compaction,
         @NotBlank String workspace,
         @Valid @DefaultValue Knowledge knowledge,
-        @Valid @DefaultValue Mcp mcp) {
+        @Valid @DefaultValue Mcp mcp,
+        @Valid @DefaultValue A2a a2a,
+        @Valid @DefaultValue Nacos nacos) {
 
     /**
      * Redis 配置。
@@ -190,15 +194,216 @@ public record YokeProperties(
         /** 地址和请求头里可能带令牌：toString 只留协议、主机和端口，请求头只列名字。 */
         @Override
         public @NonNull String toString() {
-            String origin;
-            try {
-                URI uri = URI.create(url);
-                origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
-            } catch (IllegalArgumentException e) {
-                origin = "<invalid>";
-            }
-            return "McpServer[name=" + name + ", transport=" + transport + ", url=" + origin
+            return "McpServer[name=" + name + ", transport=" + transport + ", url=" + originOnly(url)
                     + ", timeout=" + timeout + ", headers=" + headers.keySet() + "]";
+        }
+    }
+
+    /**
+     * A2A 互通配置。
+     *
+     * @param server 对外暴露的 A2A 服务端；默认关闭
+     * @param remote 要调用的远端 A2A Agent；不配置就没有远端调用能力
+     */
+    public record A2a(@Valid @DefaultValue Server server, @Valid @DefaultValue Remote remote) {
+
+        /** 全部使用默认值：服务端关闭、没有远端。 */
+        public static A2a disabled() {
+            return new A2a(new Server(false, null, null, Duration.ofSeconds(120), Server.DEFAULT_MAX_BODY_BYTES, new Card(null, null, "1.0.0", List.of())),
+                    new Remote(null, null, null, Duration.ofSeconds(30)));
+        }
+
+        /**
+         * A2A 服务端。<b>开启就是一个等价于 {@code /api/chat} 的入口</b>：Yoke 目前没有任何认证，
+         * 调用方还能自报 userId。生产必须放在网关后面，或至少配置 {@code token}。
+         *
+         * @param enabled   是否注册 Agent Card 和 JSON-RPC 端点，默认 false
+         * @param token     可选的 Bearer Token，只保护 JSON-RPC 端点（Agent Card 公开，里面会声明需要 Bearer）；
+         *                  来自环境变量，不配置就不校验（启动时打 WARN）
+         * @param publicUrl 外部能访问到的根地址，例如 {@code https://yoke.example.com}；写进 Agent Card 和 Nacos 注册，
+         *                  不配置时用 {@code http://localhost:{server.port}}
+         * @param timeout   一次调用的总超时，默认 120 秒
+         * @param maxBodyBytes JSON-RPC 请求体的大小上限（字节），默认 256 KB，超过返回 -32600；非法值回落到默认
+         * @param card      Agent Card 里的描述信息
+         */
+        public record Server(
+                @DefaultValue("false") boolean enabled,
+                String token,
+                String publicUrl,
+                @DefaultValue("120s") Duration timeout,
+                @DefaultValue("262144") int maxBodyBytes,
+                @Valid @DefaultValue Card card) {
+
+            public static final int DEFAULT_MAX_BODY_BYTES = 256 * 1024;
+
+            /** token 至少这么长，否则启动失败（见 A2aServerConfiguration.requireStrongToken）。 */
+            public static final int MIN_TOKEN_LENGTH = 16;
+
+            public Server {
+                if (Objects.isNull(timeout) || timeout.isZero() || timeout.isNegative()) {
+                    timeout = Duration.ofSeconds(120);
+                }
+                if (maxBodyBytes <= 0) {
+                    maxBodyBytes = DEFAULT_MAX_BODY_BYTES;
+                }
+            }
+
+            public boolean tokenConfigured() {
+                return StrUtil.isNotBlank(token);
+            }
+
+            /** token 不进日志和调试输出。 */
+            @Override
+            public @NonNull String toString() {
+                return "Server[enabled=" + enabled + ", token=" + (tokenConfigured() ? "***" : null)
+                        + ", publicUrl=" + publicUrl + ", timeout=" + timeout + ", card=" + card + "]";
+            }
+        }
+
+        /**
+         * Agent Card 的描述信息；名字缺省时用 {@code agentscope.agent.name}，描述缺省时用一句默认说明。
+         *
+         * @param name        对外名字，也是 Nacos 里的 Agent 名
+         * @param description 描述
+         * @param version     版本号，默认 1.0.0
+         * @param skills      对外宣告的技能（只是描述，不会让 Agent 多出任何工具）
+         */
+        public record Card(
+                String name, String description, @DefaultValue("1.0.0") String version,
+                @DefaultValue List<@Valid Skill> skills) {
+
+            public Card {
+                skills = Optional.ofNullable(skills).map(List::copyOf).orElse(List.of());
+            }
+        }
+
+        /**
+         * Agent Card 里的一个技能条目。
+         *
+         * @param id          技能标识
+         * @param name        技能名
+         * @param description 说明
+         * @param tags        标签
+         */
+        public record Skill(
+                @NotBlank String id, @NotBlank String name, String description, @DefaultValue List<String> tags) {
+
+            public Skill {
+                tags = Optional.ofNullable(tags).map(List::copyOf).orElse(List.of());
+            }
+        }
+
+        /**
+         * 远端 A2A Agent。地址只来自配置，请求体不能影响它（防 SSRF）。两种来源，同一时刻只用一种：
+         * <ul>
+         *   <li>{@code url}：well-known 直连，读取 {@code url + /.well-known/agent-card.json}；</li>
+         *   <li>{@code agentName}：到 Nacos 里按名字发现，要求 {@code yoke.nacos.a2a.enabled=true}；两个都配时用 Nacos。</li>
+         * </ul>
+         *
+         * @param url       远端根地址，例如 {@code http://other:8080}
+         * @param agentName Nacos 里的远端 Agent 名
+         * @param token     调用远端时带的 Bearer Token，可选
+         * @param timeout   一次调用的超时，默认 30 秒
+         */
+        public record Remote(String url, String agentName, String token, @DefaultValue("30s") Duration timeout) {
+
+            public Remote {
+                if (Objects.isNull(timeout) || timeout.isZero() || timeout.isNegative()) {
+                    timeout = Duration.ofSeconds(30);
+                }
+            }
+
+            public boolean configured() {
+                return StrUtil.isNotBlank(url) || StrUtil.isNotBlank(agentName);
+            }
+
+            /** 地址里可能带路径或参数，token 更不能进日志：只留协议、主机和端口，以及是否有 token。 */
+            @Override
+            public @NonNull String toString() {
+                return "Remote[url=" + originOnly(url) + ", agentName=" + agentName + ", token="
+                        + (StrUtil.isNotBlank(token) ? "***" : null) + ", timeout=" + timeout + "]";
+            }
+        }
+    }
+
+    /** 只保留协议、主机和端口，去掉可能含敏感信息的路径、查询参数和用户信息；空值返回 null。 */
+    private static String originOnly(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(raw.trim());
+            if (Objects.isNull(uri.getScheme()) || Objects.isNull(uri.getHost())) {
+                return "<invalid>";
+            }
+            return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+        } catch (IllegalArgumentException e) {
+            return "<invalid>";
+        }
+    }
+
+    /**
+     * Nacos 接线配置。所有开关默认关闭且互不绑死：只开 Prompt 热更新不需要开 A2A，反之亦然。
+     * 任何一个开关打开，启动时都会先探活，连不上直接启动失败。
+     *
+     * @param serverAddr Nacos 地址，格式 {@code host:port}，默认 127.0.0.1:8848；AI 通道还需要 gRPC 端口（主端口 + 1000）
+     * @param namespace  命名空间 ID（不是名称），不配置用 public
+     * @param username   用户名，Nacos 开了鉴权才需要；来自环境变量
+     * @param password   密码，来自环境变量，不进日志
+     * @param a2a        A2A 注册发现
+     * @param prompt     Prompt 热更新
+     */
+    public record Nacos(
+            @DefaultValue("127.0.0.1:8848") String serverAddr,
+            String namespace,
+            String username,
+            String password,
+            @DefaultValue A2aSwitch a2a,
+            @DefaultValue PromptSwitch prompt) {
+
+        /** 全部使用默认值：所有开关关闭。 */
+        public static Nacos disabled() {
+            return new Nacos("127.0.0.1:8848", null, null, null, new A2aSwitch(false, false),
+                    new PromptSwitch(false, "yoke-system-prompt", Duration.ofSeconds(2)));
+        }
+
+        /** 任何一个开关打开就需要连接 Nacos。 */
+        public boolean anyEnabled() {
+            return a2a.enabled() || prompt.enabled();
+        }
+
+        /** 密码不进日志和调试输出。 */
+        @Override
+        public @NonNull String toString() {
+            return "Nacos[serverAddr=" + serverAddr + ", namespace=" + namespace + ", username=" + username
+                    + ", password=" + (StrUtil.isNotBlank(password) ? "***" : null) + ", a2a=" + a2a
+                    + ", prompt=" + prompt + "]";
+        }
+
+        /**
+         * A2A 注册发现开关：服务端开启时把 Agent Card 注册进去，配了 {@code yoke.a2a.remote.agent-name} 时从这里发现远端。
+         *
+         * @param enabled         是否启用，默认 false
+         * @param registerAsLatest 注册时是否把这个版本设为最新版本
+         */
+        public record A2aSwitch(@DefaultValue("false") boolean enabled, @DefaultValue("false") boolean registerAsLatest) {
+        }
+
+        /**
+         * Prompt 热更新开关：每轮对话把 Nacos 里最新的提示词追加到内置提示词之后。
+         *
+         * @param enabled 是否启用，默认 false
+         * @param key     Nacos 里的 Prompt Key
+         * @param timeout 每轮拉取的超时，默认 2 秒；超时按拉取失败处理（沿用内置提示词），不拖住对话
+         */
+        public record PromptSwitch(@DefaultValue("false") boolean enabled, @DefaultValue("yoke-system-prompt") String key,
+                @DefaultValue("2s") Duration timeout) {
+
+            public PromptSwitch {
+                if (Objects.isNull(timeout) || timeout.isZero() || timeout.isNegative()) {
+                    timeout = Duration.ofSeconds(2);
+                }
+            }
         }
     }
 }

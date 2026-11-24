@@ -37,6 +37,16 @@ dependencies {
     // 字符串判空统一用 Hutool 的 StrUtil（isBlank / isNotBlank），只引核心包，不用 hutool-all
     implementation libs.hutool.core
 
+    // A2A 互通：服务端把 Agent 暴露成 A2A 服务，客户端把远端 Agent 包成本地 Agent；两者互相独立
+    implementation libs.agentscope.a2a.server
+    implementation libs.agentscope.a2a.client
+    // Nacos：A2A 注册发现与 Prompt 热更新，默认不启用（yoke.nacos.*）。带进 nacos-client（AiService 在里面）；
+    // 不引 nacos-prompt：它的 NacosPromptListener 靠订阅推送更新缓存，实测要等 10 多秒，Yoke 每轮直接拉取
+    implementation libs.agentscope.nacos.a2a
+    // 可观测：只暴露 health / info / metrics / prometheus，见 application.yml 的 management 配置
+    implementation libs.spring.boot.starter.actuator
+    implementation libs.micrometer.registry.prometheus
+
     // Lombok 只在编译期使用；这几个配置不继承 implementation，需要单独引入 BOM 才能省略版本号
     ['compileOnly', 'annotationProcessor', 'testCompileOnly', 'testAnnotationProcessor'].each { configuration ->
         add(configuration, platform(libs.spring.boot.dependencies))

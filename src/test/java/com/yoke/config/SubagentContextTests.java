@@ -10,6 +10,7 @@ import com.yoke.support.ScriptedModel;
 import com.yoke.support.TestAgents;
 import com.yoke.tool.ChatTools;
 import io.agentscope.core.tool.Toolkit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -17,6 +18,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** 子 Agent 里调用依赖 UserContext 的工具时，上下文有没有一路传下去。 */
 class SubagentContextTests {
+
+    private final TestAgents.CloseTracker tracker = new TestAgents.CloseTracker();
+
+    @AfterEach
+    void awaitAgentsClosed() throws Exception {
+        tracker.awaitAllClosed();
+    }
 
     @Test
     void 通用子Agent里调用list_my_notes能拿到发起请求的用户(@TempDir Path workspace) {
@@ -34,7 +42,7 @@ class SubagentContextTests {
         });
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new ChatTools());
-        ChatController controller = AguiTestSupport.controller(TestAgents.factory(model, workspace, toolkit));
+        ChatController controller = AguiTestSupport.controller(tracker.wrap(TestAgents.factory(model, workspace, toolkit)));
 
         controller.chat(new ChatRequest("sub-ctx", "让子 Agent 查我的笔记", "alice")).block();
 
