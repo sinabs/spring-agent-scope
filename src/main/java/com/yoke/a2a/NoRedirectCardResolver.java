@@ -22,4 +22,14 @@ public class NoRedirectCardResolver implements AgentCardResolver {
     public AgentCard getAgentCard(String agentName) {
         return A2A.getAgentCard(http, baseUrl, "/.well-known/agent-card.json", Map.of());
     }
+
+    /** 关闭取卡片所用的底层 HTTP 客户端。 */
+    public void close() {
+        http.close();
+    }
+
+    /** 底层 HTTP 客户端是否已关闭，供生命周期测试断言。 */
+    public boolean isTerminated() {
+        return http.isTerminated();
+    }
 }

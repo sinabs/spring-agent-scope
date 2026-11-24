@@ -31,7 +31,7 @@ public class A2aClientConfiguration {
     /** 取卡片的来源决定调用的是哪个地址，只来自配置。 */
     public enum CardSource { NACOS, WELL_KNOWN }
 
-    @Bean
+    @Bean(destroyMethod = "close")
     public RemoteAgentClient remoteAgentClient(YokeProperties yoke, ObjectProvider<AiService> nacos) {
         YokeProperties.A2a.Remote remote = yoke.a2a().remote();
         CardSource source = cardSource(yoke);

@@ -59,6 +59,7 @@ public class RemoteAgentClient {
     private final String token;
     private final Duration timeout;
     private final String pinnedOrigin;
+    private final NoRedirectHttpClient httpClient;
 
     public RemoteAgentClient(AgentCardResolver cardResolver, String agentName, String token, Duration timeout,
             String pinnedOrigin) {
@@ -67,6 +68,7 @@ public class RemoteAgentClient {
         this.token = token;
         this.timeout = timeout;
         this.pinnedOrigin = pinnedOrigin;
+        this.httpClient = new NoRedirectHttpClient(timeout);
     }
 
     /** 向远端发一句话，返回远端回复的文本。 */
@@ -87,7 +89,7 @@ public class RemoteAgentClient {
         if (Objects.nonNull(pinnedOrigin) && !cardStaysInOrigin(card)) {
             throw new RemoteAgentException("远端 Agent Card 声明的服务地址与配置的地址不一致，已拒绝调用", false, null);
         }
-        JSONRPCTransportConfig transport = new JSONRPCTransportConfig(new NoRedirectHttpClient(timeout));
+        JSONRPCTransportConfig transport = new JSONRPCTransportConfig(httpClient);
         transport.setInterceptors(List.of(new SessionAndAuth(sessionId, token)));
         return A2aAgent.builder()
                 .name(agentName)
@@ -163,6 +165,19 @@ public class RemoteAgentClient {
     /** 取卡片用的解析器；生产装配必须是不跟随重定向的那个，装配测试靠它断言。 */
     public AgentCardResolver cardResolver() {
         return cardResolver;
+    }
+
+    /** 发消息复用的 HTTP 客户端，供生命周期与复用测试断言。 */
+    public NoRedirectHttpClient httpClient() {
+        return httpClient;
+    }
+
+    /** 容器销毁时关闭复用的 HTTP 客户端及卡片解析器连接池。 */
+    public void close() {
+        httpClient.close();
+        if (cardResolver instanceof NoRedirectCardResolver resolver) {
+            resolver.close();
+        }
     }
 
     /** 给发出的 message/send 补上会话标识，并带上 Bearer Token。 */

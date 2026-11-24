@@ -274,4 +274,24 @@ class RemoteAgentClientTests {
 
         assertRefusedWithoutAnyTraffic(base);
     }
+
+    @Test
+    void 多次调用复用同一个HTTP客户端且关闭后释放底层资源() throws IOException {
+        String okRpc = "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"kind\":\"message\",\"messageId\":\"m1\",\"role\":\"agent\","
+                + "\"parts\":[{\"kind\":\"text\",\"text\":\"ok\"}]}}";
+        String base = startRemote(0, 200, okRpc);
+        NoRedirectCardResolver resolver = new NoRedirectCardResolver(base, Duration.ofSeconds(5));
+        RemoteAgentClient client = new RemoteAgentClient(resolver, "remote", null, Duration.ofSeconds(5),
+                RemoteAgentClient.originOf(base));
+        NoRedirectHttpClient firstHttp = client.httpClient();
+
+        assertThat(client.ask("s-1", "第一句").block()).isEqualTo("ok");
+        assertThat(client.ask("s-2", "第二句").block()).isEqualTo("ok");
+        assertThat(client.httpClient()).isSameAs(firstHttp);
+        assertThat(firstHttp.isTerminated()).isFalse();
+
+        client.close();
+        assertThat(firstHttp.isTerminated()).isTrue();
+        assertThat(resolver.isTerminated()).isTrue();
+    }
 }

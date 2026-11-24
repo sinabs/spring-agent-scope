@@ -37,6 +37,16 @@ public class NoRedirectHttpClient implements A2AHttpClient {
                 .connectTimeout(Duration.ofSeconds(10)).build();
     }
 
+    /** 关闭底层连接池与 SelectorManager 线程。 */
+    public void close() {
+        client.close();
+    }
+
+    /** 底层 HttpClient 是否已关闭，供生命周期测试断言。 */
+    public boolean isTerminated() {
+        return client.isTerminated();
+    }
+
     @Override
     public @NonNull GetBuilder createGet() {
         return new Get();

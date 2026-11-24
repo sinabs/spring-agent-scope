@@ -23,11 +23,19 @@ class A2aClientWiringTests {
             .withUserConfiguration(Props.class, A2aClientConfiguration.class);
 
     @Test
-    void 直连模式装配出不跟随重定向的卡片解析器() {
+    void 直连模式装配出不跟随重定向的卡片解析器且关闭上下文时释放HTTP客户端() {
+        java.util.concurrent.atomic.AtomicReference<RemoteAgentClient> holder = new java.util.concurrent.atomic.AtomicReference<>();
         runner.withPropertyValues("yoke.a2a.remote.url=http://127.0.0.1:1").run(context -> {
             assertThat(context).hasNotFailed();
-            assertThat(context.getBean(RemoteAgentClient.class).cardResolver()).isInstanceOf(NoRedirectCardResolver.class);
+            RemoteAgentClient client = context.getBean(RemoteAgentClient.class);
+            assertThat(client.cardResolver()).isInstanceOf(NoRedirectCardResolver.class);
+            assertThat(client.httpClient().isTerminated()).isFalse();
+            holder.set(client);
         });
+
+        RemoteAgentClient closed = holder.get();
+        assertThat(closed.httpClient().isTerminated()).as("容器关闭时释放发消息的 HttpClient").isTrue();
+        assertThat(((NoRedirectCardResolver) closed.cardResolver()).isTerminated()).as("容器关闭时释放取卡片的 HttpClient").isTrue();
     }
 
     @Test
