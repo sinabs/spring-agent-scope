@@ -2,6 +2,7 @@
 # 按「路径 + 内容」登记，而不是按行号（.gitleaksignore 的指纹带行号，改动文件就会失效）。
 # 新增条目前先确认确实不是真实密钥，并写明理由。
 title = "Yoke gitleaks"
+minVersion = "v8.25.0"
 
 [extend]
 useDefault = true
