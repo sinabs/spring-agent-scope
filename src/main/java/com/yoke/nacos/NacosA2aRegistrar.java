@@ -34,7 +34,7 @@ public class NacosA2aRegistrar {
     }
 
     /** 注册 Agent Card 和 JSON-RPC 端点（地址取自 Card 自己的 url，与对外公布的一致）。 */
-    public void register(AgentCard card) {
+    public synchronized void register(AgentCard card) {
         URI uri = URI.create(card.url());
         boolean tls = "https".equalsIgnoreCase(uri.getScheme());
         int endpointPort = uri.getPort() > 0 ? uri.getPort() : tls ? 443 : 80;
@@ -58,7 +58,7 @@ public class NacosA2aRegistrar {
     }
 
     /** 注销端点；Agent Card 本身留在 Nacos 里（它是配置数据，不是在线状态）。 */
-    public void deregister() {
+    public synchronized void deregister() {
         if (Objects.isNull(registered)) {
             return;
         }
